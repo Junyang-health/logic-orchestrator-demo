@@ -312,7 +312,7 @@ export default function App() {
         return;
       }
       const data = (await res.json()) as { mindmap: MindmapJson };
-      loadMainGraph(data.mindmap);
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
       clearSandbox();
       clearReviewComments();
       setSelectedCommentIds([]);

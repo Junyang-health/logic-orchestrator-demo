@@ -1,0 +1,41 @@
+# Local deployment for your team (Mac / Windows / Linux with Docker Desktop).
+#
+# 1. Copy backend/.env.example to backend/.env and add keys (or export env vars).
+# 2. From repo root:
+#      docker compose up --build
+# 3. Open http://127.0.0.1:5173  (UI) — API is http://127.0.0.1:8000
+#
+# Data persists in the named volume `mindmap_backend_data` under /app/data in the API container.
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - mindmap_backend_data:/app/data
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: http://127.0.0.1:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  mindmap_backend_data:

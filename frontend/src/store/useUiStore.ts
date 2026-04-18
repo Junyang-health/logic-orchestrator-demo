@@ -18,6 +18,23 @@ export type MindmapNodePayload = {
   inferred_consequences?: string;
 };
 
+export type LoadMainGraphOptions = {
+  /** When `'diff'`, replace previous "new" highlights with nodes that changed vs prior main graph. */
+  newMarks?: "none" | "diff";
+};
+
+function nodeFingerprint(n: MindmapNode): string {
+  return JSON.stringify({
+    label: n.label,
+    type: n.type,
+    status: n.status,
+    metadata: n.metadata ?? {},
+    violation_summary: n.violation_summary,
+    inferred_consequences: n.inferred_consequences,
+    upstream_conflict_summary: n.upstream_conflict_summary
+  });
+}
+
 type GraphState = {
   mainGraph: MindmapJson | null;
   sandboxGraph: MindmapJson;
@@ -25,7 +42,10 @@ type GraphState = {
   setSandboxMode: (on: boolean) => void;
   clearSandbox: () => void;
   mergeSandboxIntoMain: () => void;
-  loadMainGraph: (graph: MindmapJson) => void;
+  /** `newMarks: 'diff'` marks nodes that changed (e.g. after assistant apply). Omit or `'none'` clears UI "new" badges (e.g. project reload). */
+  loadMainGraph: (graph: MindmapJson, opts?: LoadMainGraphOptions) => void;
+  /** Client-only: node ids showing the temporary "new" chip until the next graph modification or a non-diff load. */
+  newMarkedNodeIds: Record<string, boolean>;
   addNode: (node: MindmapNode) => void;
   addEdge: (edge: MindmapEdge) => void;
   removeNode: (nodeId: string) => void;
@@ -257,11 +277,13 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
         edges: st.sandboxGraph.edges.map((e) => ({ ...e, status: "firm" }))
       });
       const clusterByNodeId = computeClusters(promoted);
+      const newMarkedNodeIds = Object.fromEntries(promoted.nodes.map((n) => [n.id, true]));
       set({
         mainGraph: promoted,
         sandboxGraph: { nodes: [], edges: [] },
         clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+        newMarkedNodeIds
       });
       return;
     }
@@ -275,24 +297,50 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       edges: combined.edges.map((e) => ({ ...e, status: "firm" as const }))
     });
     const clusterByNodeId = computeClusters(merged);
+    const sandboxIds = new Set(sandbox.nodes.map((n) => n.id));
+    const newMarkedNodeIds: Record<string, boolean> = {};
+    for (const n of merged.nodes) {
+      if (sandboxIds.has(n.id)) {
+        newMarkedNodeIds[n.id] = true;
+        continue;
+      }
+      const prev = main.nodes.find((p) => p.id === n.id);
+      if (!prev || nodeFingerprint(prev) !== nodeFingerprint(n)) {
+        newMarkedNodeIds[n.id] = true;
+      }
+    }
     set({
       mainGraph: merged,
       sandboxGraph: { nodes: [], edges: [] },
       clusterByNodeId,
-      clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+      newMarkedNodeIds
     });
   },
-  loadMainGraph: (graph) => {
+  newMarkedNodeIds: {},
+  loadMainGraph: (graph, opts) => {
     const st = get();
     const normalized: MindmapJson = normalizeMindmapJsonNodeTypes({
       nodes: graph.nodes.map((n) => ({ ...n, status: n.status ?? "firm" })),
       edges: graph.edges.map((e) => ({ ...e, status: e.status ?? "firm" }))
     });
     const clusterByNodeId = computeClusters(normalized);
+    const mode = opts?.newMarks ?? "none";
+    let newMarkedNodeIds: Record<string, boolean> = {};
+    if (mode === "diff" && st.mainGraph && st.mainGraph.nodes.length > 0) {
+      const prevFp = new Map(st.mainGraph.nodes.map((n) => [n.id, nodeFingerprint(n)]));
+      for (const n of normalized.nodes) {
+        const fp = nodeFingerprint(n);
+        if (!prevFp.has(n.id) || prevFp.get(n.id) !== fp) {
+          newMarkedNodeIds[n.id] = true;
+        }
+      }
+    }
     set({
       mainGraph: normalized,
       clusterByNodeId,
-      clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+      newMarkedNodeIds
     });
   },
   addNode: (node) => {
@@ -314,14 +362,15 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       set({
         mainGraph: next,
         clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+        newMarkedNodeIds: { [normalized.id]: true }
       });
     } else {
       const cur = st.sandboxGraph;
       const idx = cur.nodes.findIndex((n) => n.id === node.id);
       const nodes =
         idx >= 0 ? cur.nodes.map((n, i) => (i === idx ? { ...n, ...normalized } : n)) : [...cur.nodes, normalized];
-      set({ sandboxGraph: { ...cur, nodes } });
+      set({ sandboxGraph: { ...cur, nodes }, newMarkedNodeIds: { [normalized.id]: true } });
     }
   },
   addEdge: (edge) => {
@@ -340,14 +389,18 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       set({
         mainGraph: next,
         clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+        newMarkedNodeIds: { [edge.source]: true, [edge.target]: true }
       });
     } else {
       const cur = st.sandboxGraph;
       const edges = cur.edges.some((e) => `${e.source}→${e.target}::${e.label ?? ""}` === key)
         ? cur.edges
         : [...cur.edges, { ...edge, status: edge.status ?? status }];
-      set({ sandboxGraph: { ...cur, edges } });
+      set({
+        sandboxGraph: { ...cur, edges },
+        newMarkedNodeIds: { [edge.source]: true, [edge.target]: true }
+      });
     }
   },
 
@@ -363,7 +416,8 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       set({
         mainGraph: next,
         clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+        newMarkedNodeIds: {}
       });
     } else {
       const cur = st.sandboxGraph;
@@ -371,7 +425,8 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
         sandboxGraph: {
           nodes: cur.nodes.filter((n) => n.id !== nodeId),
           edges: cur.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
-        }
+        },
+        newMarkedNodeIds: {}
       });
     }
   },
@@ -388,7 +443,8 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       set({
         mainGraph: next,
         clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
+        newMarkedNodeIds: { [source]: true, [target]: true }
       });
     } else {
       const cur = st.sandboxGraph;
@@ -396,7 +452,8 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
         sandboxGraph: {
           ...cur,
           edges: cur.edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key)
-        }
+        },
+        newMarkedNodeIds: { [source]: true, [target]: true }
       });
     }
   },

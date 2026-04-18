@@ -70,6 +70,52 @@ export type CustomSkillRow = {
 
 type ChatRow = { id: string; role: "user" | "assistant"; content: string };
 
+type BlackSwanScenario = {
+  id: string;
+  mece_axis: string;
+  title: string;
+  summary: string;
+  why_relevant?: string;
+};
+type BlackSwanGap = { id: string; description: string; severity?: string };
+type BlackSwanMitigation = { id: string; title: string; description: string; addresses_gaps?: string[] };
+type BlackSwanResultBlock = {
+  scenario_id: string;
+  potential_impacts: string[];
+  gaps_to_address: BlackSwanGap[];
+  mitigations: BlackSwanMitigation[];
+};
+type BlackSwanRunBundle = { results: BlackSwanResultBlock[]; executive_summary?: string };
+
+function bsMitKey(scenarioId: string, mitigationId: string): string {
+  return `${scenarioId}::${mitigationId}`;
+}
+
+type MeceScanBundle = {
+  mece_assessment: Record<string, unknown>;
+  level1_node_ids: string[];
+  level2_node_ids: string[];
+  gaps: { id: string; description: string; severity?: string }[];
+  proposed_modifications: {
+    id: string;
+    target_node_id: string;
+    target_level: number;
+    action: string;
+    summary: string;
+    detail?: string;
+    suggested_label?: string;
+  }[];
+};
+
+type MeceEvidenceRow = {
+  modification_id: string;
+  supported: boolean;
+  confidence?: string;
+  supporting_evidence?: { source_filename: string; text_snippet: string }[];
+  web_search_recommended?: boolean;
+  suggested_search_query?: string;
+};
+
 function loadSkillsFromStorage(): CustomSkillRow[] {
   try {
     const raw = localStorage.getItem(SKILLS_STORAGE_KEY);
@@ -111,7 +157,7 @@ export default function AssistantPanel() {
   const [persona, setPersona] = useState<string>(() => localStorage.getItem("mindmap_assistant_persona") || "");
   const [applyInstruction, setApplyInstruction] = useState("");
   const [webSearchQuery, setWebSearchQuery] = useState<string>(() => localStorage.getItem("mindmap_web_search_query") || "");
-  const [mode, setMode] = useState<"chat" | "optimism" | "blackSwan" | "roundtable">("chat");
+  const [mode, setMode] = useState<"chat" | "optimism" | "blackSwan" | "mece" | "roundtable">("chat");
 
   const [rtPersonas, setRtPersonas] = useState<RoundtablePersona[]>([]);
   const [rtTranscript, setRtTranscript] = useState<RoundtableTranscriptRow[]>([]);
@@ -137,6 +183,17 @@ export default function AssistantPanel() {
   const [optimismFocus, setOptimismFocus] = useState<OptimismMetric | null>(null);
   const [simBusy, setSimBusy] = useState(false);
   const [simReport, setSimReport] = useState<string>("");
+  const [bsScenarios, setBsScenarios] = useState<BlackSwanScenario[] | null>(null);
+  const [bsSelectedScenarioIds, setBsSelectedScenarioIds] = useState<Set<string>>(() => new Set());
+  const [bsRunBundle, setBsRunBundle] = useState<BlackSwanRunBundle | null>(null);
+  const [bsMitigationPick, setBsMitigationPick] = useState<Set<string>>(() => new Set());
+  const [meceScanBundle, setMeceScanBundle] = useState<MeceScanBundle | null>(null);
+  const [meceSelectedMods, setMeceSelectedMods] = useState<Set<string>>(() => new Set());
+  const [meceEvidenceBundle, setMeceEvidenceBundle] = useState<{ results: MeceEvidenceRow[]; corpus_stats?: Record<string, unknown> } | null>(
+    null
+  );
+  const [meceWebHints, setMeceWebHints] = useState<Record<string, string>>({});
+  const [meceWebBusyId, setMeceWebBusyId] = useState<string | null>(null);
   const [customSkills, setCustomSkills] = useState<CustomSkillRow[]>(() =>
     typeof localStorage !== "undefined" ? loadSkillsFromStorage() : []
   );
@@ -227,6 +284,18 @@ export default function AssistantPanel() {
     }
     setOptimismFocus((prev) => (prev && av.includes(prev) ? prev : av[0]));
   }, [mode, optimismMetricsAvailable]);
+
+  useEffect(() => {
+    setBsScenarios(null);
+    setBsSelectedScenarioIds(new Set());
+    setBsRunBundle(null);
+    setBsMitigationPick(new Set());
+    setMeceScanBundle(null);
+    setMeceSelectedMods(new Set());
+    setMeceEvidenceBundle(null);
+    setMeceWebHints({});
+    setMeceWebBusyId(null);
+  }, [selectedNode?.id]);
 
   const sandboxHasDrafts =
     sandboxGraph.nodes.length > 0 || sandboxGraph.edges.length > 0;
@@ -361,7 +430,7 @@ export default function AssistantPanel() {
         throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Apply failed (${res.status})`);
       }
       const data = (await res.json()) as { mindmap: MindmapJson };
-      loadMainGraph(data.mindmap);
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
       clearSandbox();
       setSandboxMode(false);
       setAssistantActive(false);
@@ -532,7 +601,7 @@ export default function AssistantPanel() {
         throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Apply failed (${res.status})`);
       }
       const data = (await res.json()) as { mindmap: MindmapJson };
-      loadMainGraph(data.mindmap);
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
       clearSandbox();
       setSandboxMode(false);
       setAssistantActive(false);
@@ -616,7 +685,7 @@ export default function AssistantPanel() {
       }
       const data = (await res.json()) as { mindmap: MindmapJson; report: string };
       setSimReport(data.report || "");
-      loadMainGraph(data.mindmap);
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
       clearSandbox();
       setSandboxMode(false);
       setAssistantActive(false);
@@ -642,39 +711,134 @@ export default function AssistantPanel() {
     setAssistantActive
   ]);
 
-  const runBlackSwanSimulation = useCallback(async () => {
+  const blackSwanScan = useCallback(async () => {
     if (!selectedNode?.id) return;
     setSimBusy(true);
     setError("");
     setSimReport("");
+    setBsRunBundle(null);
+    setBsMitigationPick(new Set());
+    setBsSelectedScenarioIds(new Set());
     try {
-      const res = await fetch(`${backendBase}/assistant/simulate/black-swan`, {
+      const res = await fetch(`${backendBase}/assistant/simulate/black-swan/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_root_id: selectedNode.id,
+          full_nodes: combined.nodes,
+          full_edges: combined.edges
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const d = (err as { detail?: unknown }).detail;
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Scan failed (${res.status})`);
+      }
+      const data = (await res.json()) as { scenarios: BlackSwanScenario[]; report?: string };
+      setBsScenarios(data.scenarios || []);
+      setSimReport(data.report || "Scan complete.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Black swan scan failed");
+      setBsScenarios(null);
+    } finally {
+      setSimBusy(false);
+    }
+  }, [selectedNode?.id, backendBase, combined.nodes, combined.edges]);
+
+  const blackSwanRun = useCallback(async () => {
+    if (!selectedNode?.id || !bsScenarios?.length) return;
+    const picked = bsScenarios.filter((s) => bsSelectedScenarioIds.has(s.id));
+    if (picked.length < 1) {
+      setError("Select at least one scenario to simulate.");
+      return;
+    }
+    setSimBusy(true);
+    setError("");
+    setSimReport("");
+    setBsMitigationPick(new Set());
+    try {
+      const res = await fetch(`${backendBase}/assistant/simulate/black-swan/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           branch_root_id: selectedNode.id,
           full_nodes: combined.nodes,
           full_edges: combined.edges,
-          messages: [{ role: "user", content: "Run black swan simulation" }],
-          custom_skills: [],
-          builtin_skills: {},
-          sandbox_mode: sandboxMode
+          scenarios: picked
         })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const d = (err as { detail?: unknown }).detail;
-        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Simulation failed (${res.status})`);
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Run failed (${res.status})`);
+      }
+      const data = (await res.json()) as BlackSwanRunBundle & { report?: string; results: BlackSwanResultBlock[] };
+      setBsRunBundle({
+        results: data.results || [],
+        executive_summary: data.executive_summary || data.report || ""
+      });
+      setSimReport([data.executive_summary, data.report].filter(Boolean).join("\n\n") || "Simulation complete.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Black swan run failed");
+      setBsRunBundle(null);
+    } finally {
+      setSimBusy(false);
+    }
+  }, [selectedNode?.id, backendBase, combined.nodes, combined.edges, bsScenarios, bsSelectedScenarioIds]);
+
+  const blackSwanApply = useCallback(async () => {
+    if (!selectedNode?.id || !bsScenarios?.length || !bsRunBundle?.results?.length) return;
+    const pickedScenarios = bsScenarios.filter((s) => bsSelectedScenarioIds.has(s.id));
+    if (pickedScenarios.length < 1) {
+      setError("Scenario context missing; re-run simulation.");
+      return;
+    }
+    const selections = Array.from(bsMitigationPick).map((key) => {
+      const i = key.indexOf("::");
+      const scenario_id = i >= 0 ? key.slice(0, i) : key;
+      const mitigation_id = i >= 0 ? key.slice(i + 2) : "";
+      return { scenario_id, mitigation_id };
+    }).filter((x) => x.scenario_id && x.mitigation_id);
+    if (selections.length < 1) {
+      setError("Select at least one mitigation to apply to the mindmap.");
+      return;
+    }
+    setSimBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`${backendBase}/assistant/simulate/black-swan/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_root_id: selectedNode.id,
+          full_nodes: combined.nodes,
+          full_edges: combined.edges,
+          scenarios: pickedScenarios,
+          run: {
+            results: bsRunBundle.results,
+            executive_summary: bsRunBundle.executive_summary || ""
+          },
+          selections
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const d = (err as { detail?: unknown }).detail;
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Apply failed (${res.status})`);
       }
       const data = (await res.json()) as { mindmap: MindmapJson; report: string };
       setSimReport(data.report || "");
-      loadMainGraph(data.mindmap);
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
       clearSandbox();
       setSandboxMode(false);
       setAssistantActive(false);
       useUiStore.getState().setSelectedNode(null);
+      setBsScenarios(null);
+      setBsSelectedScenarioIds(new Set());
+      setBsRunBundle(null);
+      setBsMitigationPick(new Set());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Simulation request failed");
+      setError(e instanceof Error ? e.message : "Black swan apply failed");
     } finally {
       setSimBusy(false);
     }
@@ -683,7 +847,181 @@ export default function AssistantPanel() {
     backendBase,
     combined.nodes,
     combined.edges,
-    sandboxMode,
+    bsScenarios,
+    bsSelectedScenarioIds,
+    bsRunBundle,
+    bsMitigationPick,
+    loadMainGraph,
+    clearSandbox,
+    setSandboxMode,
+    setAssistantActive
+  ]);
+
+  const meceScan = useCallback(async () => {
+    if (!selectedNode?.id) return;
+    setSimBusy(true);
+    setError("");
+    setSimReport("");
+    setMeceEvidenceBundle(null);
+    setMeceWebHints({});
+    setMeceSelectedMods(new Set());
+    try {
+      const res = await fetch(`${backendBase}/assistant/mece/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mece_root_id: selectedNode.id,
+          full_nodes: combined.nodes,
+          full_edges: combined.edges
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const d = (err as { detail?: unknown }).detail;
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `MECE scan failed (${res.status})`);
+      }
+      const data = (await res.json()) as MeceScanBundle;
+      setMeceScanBundle(data);
+      const a = data.mece_assessment as { mutually_exclusive?: string; collectively_exhaustive?: string; rationale?: string };
+      setSimReport(
+        `MECE scan: exclusivity=${a?.mutually_exclusive ?? "?"} exhaustiveness=${a?.collectively_exhaustive ?? "?"}\n${(a?.rationale || "").slice(0, 1200)}`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "MECE scan failed");
+      setMeceScanBundle(null);
+    } finally {
+      setSimBusy(false);
+    }
+  }, [selectedNode?.id, backendBase, combined.nodes, combined.edges]);
+
+  const meceEvidence = useCallback(async () => {
+    if (!selectedNode?.id || !meceScanBundle) return;
+    const ids = Array.from(meceSelectedMods);
+    if (ids.length < 1) {
+      setError("Select at least one proposed modification.");
+      return;
+    }
+    setSimBusy(true);
+    setError("");
+    try {
+      const projectId =
+        typeof localStorage !== "undefined" ? (localStorage.getItem("mindmap_project_id") || "").trim() : "";
+      const res = await fetch(`${backendBase}/assistant/mece/evidence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mece_root_id: selectedNode.id,
+          full_nodes: combined.nodes,
+          full_edges: combined.edges,
+          scan: meceScanBundle,
+          modification_ids: ids,
+          project_id: projectId || undefined
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const d = (err as { detail?: unknown }).detail;
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Evidence check failed (${res.status})`);
+      }
+      const data = (await res.json()) as { results: MeceEvidenceRow[]; corpus_stats?: Record<string, unknown> };
+      setMeceEvidenceBundle({ results: data.results || [], corpus_stats: data.corpus_stats });
+      const stats = data.corpus_stats || {};
+      setSimReport(
+        `Evidence check complete. Corpus: project ~${String(stats.project_chars ?? "?")} chars, graph evidence ~${String(stats.graph_evidence_chars ?? "?")} chars.`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "MECE evidence failed");
+      setMeceEvidenceBundle(null);
+    } finally {
+      setSimBusy(false);
+    }
+  }, [selectedNode?.id, backendBase, combined.nodes, combined.edges, meceScanBundle, meceSelectedMods]);
+
+  const meceWebSearchForMod = useCallback(
+    async (modId: string, query: string) => {
+      const q = query.trim();
+      if (!q) return;
+      setMeceWebBusyId(modId);
+      setError("");
+      try {
+        const res = await fetch(`${backendBase}/assistant/mece/web-search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q.slice(0, 500) })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          const d = (err as { detail?: unknown }).detail;
+          throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Web search failed (${res.status})`);
+        }
+        const data = (await res.json()) as { results: { title: string; url: string; content: string }[] };
+        const text = (data.results || []).map((r) => `${r.title}\n${r.url}\n${r.content}`).join("\n\n").slice(0, 12000);
+        setMeceWebHints((prev) => ({
+          ...prev,
+          [modId]: [prev[modId], text].filter(Boolean).join("\n\n---\n\n")
+        }));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Web search failed");
+      } finally {
+        setMeceWebBusyId(null);
+      }
+    },
+    [backendBase]
+  );
+
+  const meceApply = useCallback(async () => {
+    if (!selectedNode?.id || !meceScanBundle || !meceEvidenceBundle?.results?.length) return;
+    const ids = Array.from(meceSelectedMods);
+    if (ids.length < 1) {
+      setError("Select at least one modification to apply.");
+      return;
+    }
+    setSimBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`${backendBase}/assistant/mece/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mece_root_id: selectedNode.id,
+          full_nodes: combined.nodes,
+          full_edges: combined.edges,
+          scan: meceScanBundle,
+          evidence: meceEvidenceBundle,
+          modification_ids: ids,
+          web_hints: meceWebHints
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const d = (err as { detail?: unknown }).detail;
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Apply failed (${res.status})`);
+      }
+      const data = (await res.json()) as { mindmap: MindmapJson; report: string };
+      setSimReport(data.report || "");
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
+      clearSandbox();
+      setSandboxMode(false);
+      setAssistantActive(false);
+      useUiStore.getState().setSelectedNode(null);
+      setMeceScanBundle(null);
+      setMeceSelectedMods(new Set());
+      setMeceEvidenceBundle(null);
+      setMeceWebHints({});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "MECE apply failed");
+    } finally {
+      setSimBusy(false);
+    }
+  }, [
+    selectedNode?.id,
+    backendBase,
+    combined.nodes,
+    combined.edges,
+    meceScanBundle,
+    meceEvidenceBundle,
+    meceSelectedMods,
+    meceWebHints,
     loadMainGraph,
     clearSandbox,
     setSandboxMode,
@@ -899,7 +1237,7 @@ export default function AssistantPanel() {
         throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Apply failed (${res.status})`);
       }
       const data = (await res.json()) as { mindmap: MindmapJson };
-      loadMainGraph(data.mindmap);
+      loadMainGraph(data.mindmap, { newMarks: "diff" });
       clearSandbox();
       setSandboxMode(false);
       setAssistantActive(false);
@@ -1069,6 +1407,16 @@ export default function AssistantPanel() {
               onClick={() => setMode("blackSwan")}
             >
               Black swan
+            </button>
+            <button
+              type="button"
+              className={[
+                "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
+                mode === "mece" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+              ].join(" ")}
+              onClick={() => setMode("mece")}
+            >
+              MECE
             </button>
             <button
               type="button"
@@ -1263,11 +1611,310 @@ export default function AssistantPanel() {
           <div className="mb-3 ios-card p-3">
             <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Black Swan simulation</div>
             <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-              Stress test the selected branch: select 3 plausible black swan events, impacts, and mitigations, then update this branch.
+              Select a branch node on the canvas, scan for five MECE-scoped tail-risk scenarios, run stress analysis on your picks,
+              then apply chosen mitigations to the mindmap.
             </p>
-            <button type="button" className="mt-3 w-full ios-button-primary" disabled={simBusy} onClick={() => void runBlackSwanSimulation()}>
-              {simBusy ? "Running…" : "Run black swan simulation & apply"}
+            {!selectedNode?.id ? (
+              <p className="mt-2 text-[10px] text-amber-700 dark:text-amber-300">Select a node on the canvas to anchor this simulation.</p>
+            ) : null}
+
+            <button
+              type="button"
+              className="mt-3 w-full ios-button-primary"
+              disabled={simBusy || !selectedNode?.id}
+              onClick={() => void blackSwanScan()}
+            >
+              {simBusy && !bsScenarios ? "Scanning…" : "1. Scan — top 5 black swan scenarios (MECE)"}
             </button>
+
+            {bsScenarios && bsScenarios.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  2. Select scenario(s) to simulate
+                </div>
+                <ul className="max-h-52 space-y-2 overflow-y-auto text-[10px]">
+                  {bsScenarios.map((s) => (
+                    <li
+                      key={s.id}
+                      className="rounded-lg border border-slate-200 bg-white/90 p-2 dark:border-slate-600 dark:bg-slate-900/80"
+                    >
+                      <label className="flex cursor-pointer gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={bsSelectedScenarioIds.has(s.id)}
+                          onChange={() => {
+                            setBsSelectedScenarioIds((prev) => {
+                              const n = new Set(prev);
+                              if (n.has(s.id)) n.delete(s.id);
+                              else n.add(s.id);
+                              return n;
+                            });
+                            setBsRunBundle(null);
+                            setBsMitigationPick(new Set());
+                          }}
+                        />
+                        <span>
+                          <span className="rounded bg-slate-100 px-1 font-mono text-[9px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {s.mece_axis}
+                          </span>{" "}
+                          <span className="font-medium text-slate-800 dark:text-slate-100">{s.title}</span>
+                          <span className="mt-0.5 block text-slate-600 dark:text-slate-300">{s.summary}</span>
+                          {s.why_relevant ? (
+                            <span className="mt-0.5 block text-[9px] text-slate-500 dark:text-slate-400">{s.why_relevant}</span>
+                          ) : null}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-sky-300 bg-sky-50 py-2 text-[11px] font-medium text-sky-900 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100 dark:hover:bg-sky-900/80"
+                  disabled={simBusy || bsSelectedScenarioIds.size < 1}
+                  onClick={() => void blackSwanRun()}
+                >
+                  {simBusy && bsScenarios ? "Running simulation…" : "3. Run simulation — impacts, gaps, mitigations"}
+                </button>
+              </div>
+            ) : null}
+
+            {bsRunBundle && bsRunBundle.results.length > 0 ? (
+              <div className="mt-3 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-600">
+                {bsRunBundle.executive_summary ? (
+                  <div className="rounded-md bg-slate-50 p-2 text-[10px] text-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
+                    <span className="font-semibold">Summary</span>
+                    <p className="mt-1 whitespace-pre-wrap">{bsRunBundle.executive_summary}</p>
+                  </div>
+                ) : null}
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  4. Review &amp; 5. Select mitigation(s) to add to the map
+                </div>
+                <div className="max-h-64 space-y-3 overflow-y-auto">
+                  {bsRunBundle.results.map((block) => {
+                    const scen = bsScenarios?.find((x) => x.id === block.scenario_id);
+                    return (
+                      <div
+                        key={block.scenario_id}
+                        className="rounded-lg border border-slate-200 bg-white/90 p-2 text-[10px] dark:border-slate-600 dark:bg-slate-900/80"
+                      >
+                        <div className="font-semibold text-slate-800 dark:text-slate-100">
+                          {scen?.title || block.scenario_id}
+                        </div>
+                        <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">Potential impacts</div>
+                        <ul className="list-inside list-disc text-slate-600 dark:text-slate-300">
+                          {block.potential_impacts.map((t, i) => (
+                            <li key={i}>{t}</li>
+                          ))}
+                        </ul>
+                        <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">Gaps to address</div>
+                        <ul className="space-y-0.5 text-slate-600 dark:text-slate-300">
+                          {block.gaps_to_address.map((g) => (
+                            <li key={g.id}>
+                              <span className="font-mono text-slate-400">{g.id}</span> ({g.severity || "medium"}) {g.description}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">Mitigations</div>
+                        <ul className="space-y-1">
+                          {block.mitigations.map((m) => {
+                            const k = bsMitKey(block.scenario_id, m.id);
+                            return (
+                              <li key={m.id}>
+                                <label className="flex cursor-pointer gap-2 rounded border border-transparent p-1 hover:border-slate-200 dark:hover:border-slate-600">
+                                  <input
+                                    type="checkbox"
+                                    checked={bsMitigationPick.has(k)}
+                                    onChange={() => {
+                                      setBsMitigationPick((prev) => {
+                                        const n = new Set(prev);
+                                        if (n.has(k)) n.delete(k);
+                                        else n.add(k);
+                                        return n;
+                                      });
+                                    }}
+                                  />
+                                  <span>
+                                    <span className="font-medium text-slate-800 dark:text-slate-100">{m.title}</span>
+                                    <span className="mt-0.5 block text-slate-600 dark:text-slate-300">{m.description}</span>
+                                    {m.addresses_gaps && m.addresses_gaps.length > 0 ? (
+                                      <span className="mt-0.5 block text-[9px] text-slate-500">
+                                        Addresses gaps: {m.addresses_gaps.join(", ")}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="w-full ios-button-primary"
+                  disabled={simBusy || bsMitigationPick.size < 1}
+                  onClick={() => void blackSwanApply()}
+                >
+                  {simBusy ? "Applying…" : "Apply selected mitigations to mindmap"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {mode === "mece" && (
+          <div className="mb-3 ios-card p-3">
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">MECE checker</div>
+            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+              Validate the anchor&apos;s two child levels for mutual exclusivity and collective exhaustiveness, review gaps and proposed
+              map edits, check evidence against project files + Evidence nodes, optionally pull web snippets, then apply selected edits.
+            </p>
+            {!selectedNode?.id ? (
+              <p className="mt-2 text-[10px] text-amber-700 dark:text-amber-300">Select an anchor node on the canvas.</p>
+            ) : null}
+
+            <button
+              type="button"
+              className="mt-3 w-full ios-button-primary"
+              disabled={simBusy || !selectedNode?.id}
+              onClick={() => void meceScan()}
+            >
+              {simBusy && !meceScanBundle ? "Scanning…" : "1. Scan two child levels & assess MECE"}
+            </button>
+
+            {meceScanBundle ? (
+              <div className="mt-3 space-y-2 text-[10px] text-slate-700 dark:text-slate-200">
+                <div className="rounded-md border border-slate-200 bg-slate-50/90 p-2 dark:border-slate-600 dark:bg-slate-900/70">
+                  <div className="font-semibold text-slate-800 dark:text-slate-100">Assessment</div>
+                  <p className="mt-1">
+                    Exclusivity:{" "}
+                    <span className="font-mono">
+                      {String((meceScanBundle.mece_assessment as { mutually_exclusive?: string })?.mutually_exclusive ?? "—")}
+                    </span>{" "}
+                    · Exhaustiveness:{" "}
+                    <span className="font-mono">
+                      {String((meceScanBundle.mece_assessment as { collectively_exhaustive?: string })?.collectively_exhaustive ?? "—")}
+                    </span>
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-slate-600 dark:text-slate-300">
+                    {String((meceScanBundle.mece_assessment as { rationale?: string })?.rationale ?? "").slice(0, 1500)}
+                  </p>
+                  <p className="mt-1 text-[9px] text-slate-500">
+                    Level-1 ids: {meceScanBundle.level1_node_ids?.length ?? 0} · Level-2 ids: {meceScanBundle.level2_node_ids?.length ?? 0}
+                  </p>
+                </div>
+                {meceScanBundle.gaps?.length ? (
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase text-slate-500">Gaps</div>
+                    <ul className="mt-1 list-inside list-disc text-slate-600 dark:text-slate-300">
+                      {meceScanBundle.gaps.map((g) => (
+                        <li key={g.id}>
+                          <span className="font-mono text-slate-400">{g.id}</span> ({g.severity || "medium"}) {g.description}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="text-[9px] font-semibold uppercase text-slate-500">2–3. Proposed modifications (select for evidence + apply)</div>
+                <ul className="max-h-48 space-y-2 overflow-y-auto">
+                  {meceScanBundle.proposed_modifications.map((m) => (
+                    <li key={m.id} className="rounded-lg border border-slate-200 bg-white/90 p-2 dark:border-slate-600 dark:bg-slate-900/80">
+                      <label className="flex cursor-pointer gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={meceSelectedMods.has(m.id)}
+                          onChange={() => {
+                            setMeceSelectedMods((prev) => {
+                              const n = new Set(prev);
+                              if (n.has(m.id)) n.delete(m.id);
+                              else n.add(m.id);
+                              return n;
+                            });
+                            setMeceEvidenceBundle(null);
+                          }}
+                        />
+                        <span>
+                          <span className="font-mono text-[9px] text-slate-500">
+                            L{m.target_level} · {m.target_node_id}
+                          </span>
+                          <span className="mt-0.5 block font-medium text-slate-800 dark:text-slate-100">{m.summary}</span>
+                          <span className="mt-0.5 block text-slate-600 dark:text-slate-300">{m.detail || ""}</span>
+                          {m.suggested_label ? (
+                            <span className="mt-0.5 block text-[9px] text-sky-700 dark:text-sky-300">Suggested label: {m.suggested_label}</span>
+                          ) : null}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-sky-300 bg-sky-50 py-2 text-[11px] font-medium text-sky-900 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100 dark:hover:bg-sky-900/80"
+                  disabled={simBusy || meceSelectedMods.size < 1}
+                  onClick={() => void meceEvidence()}
+                >
+                  {simBusy && meceScanBundle ? "Checking evidence…" : "4. Check evidence (project files + graph)"}
+                </button>
+              </div>
+            ) : null}
+
+            {meceEvidenceBundle?.results?.length ? (
+              <div className="mt-3 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-600">
+                <div className="text-[9px] font-semibold uppercase text-slate-500">Evidence results &amp; web augmentation</div>
+                <ul className="max-h-56 space-y-2 overflow-y-auto text-[10px]">
+                  {meceEvidenceBundle.results.map((r) => {
+                    const row = r as MeceEvidenceRow;
+                    return (
+                      <li key={row.modification_id} className="rounded-lg border border-slate-200 bg-white/90 p-2 dark:border-slate-600 dark:bg-slate-900/80">
+                        <div className="font-mono text-[9px] text-slate-500">{row.modification_id}</div>
+                        <div className="mt-0.5">
+                          Supported:{" "}
+                          <span className={row.supported ? "text-emerald-700 dark:text-emerald-300" : "text-amber-800 dark:text-amber-200"}>
+                            {row.supported ? "yes" : "no"}
+                          </span>{" "}
+                          · confidence: {row.confidence || "—"}
+                        </div>
+                        {row.supporting_evidence && row.supporting_evidence.length > 0 ? (
+                          <ul className="mt-1 list-inside list-disc text-slate-600 dark:text-slate-300">
+                            {row.supporting_evidence.map((ev, i) => (
+                              <li key={i}>
+                                <span className="font-mono text-[9px]">{ev.source_filename}</span> — {ev.text_snippet}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-1 text-[9px] text-slate-500">No supporting snippets from corpus.</p>
+                        )}
+                        {row.web_search_recommended || !row.supported ? (
+                          <div className="mt-2 rounded border border-amber-200 bg-amber-50/80 p-2 dark:border-amber-900/40 dark:bg-amber-950/30">
+                            <div className="text-[9px] font-semibold text-amber-900 dark:text-amber-100">Web search suggested</div>
+                            <p className="mt-0.5 text-[9px] text-amber-900 dark:text-amber-100">{row.suggested_search_query || "(no query)"}</p>
+                            <button
+                              type="button"
+                              className="mt-1 rounded bg-amber-100 px-2 py-0.5 text-[9px] font-medium text-amber-950 hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/60 dark:text-amber-50 dark:hover:bg-amber-900"
+                              disabled={!!meceWebBusyId || !(row.suggested_search_query || "").trim()}
+                              onClick={() => void meceWebSearchForMod(row.modification_id, row.suggested_search_query || "")}
+                            >
+                              {meceWebBusyId === row.modification_id ? "Searching…" : "Run Tavily & attach to this mod"}
+                            </button>
+                          </div>
+                        ) : null}
+                        {meceWebHints[row.modification_id] ? (
+                          <p className="mt-1 text-[9px] text-slate-500">Web notes attached ({meceWebHints[row.modification_id].length} chars).</p>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <button type="button" className="w-full ios-button-primary" disabled={simBusy || meceSelectedMods.size < 1} onClick={() => void meceApply()}>
+                  {simBusy ? "Applying…" : "5. Apply selected modifications to mindmap"}
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -1697,6 +2344,12 @@ export default function AssistantPanel() {
               <>
                 Select a node on the canvas — the roundtable focuses on that node, and edits apply to its subtree root
                 (same as session target).
+              </>
+            ) : mode === "mece" ? (
+              <>
+                Select an anchor node on the canvas. MECE analysis covers its <span className="font-medium">direct children</span>{" "}
+                and <span className="font-medium">their children</span> (two levels only). Evidence uses project files (if a project is
+                selected in Source material) plus Evidence nodes in the subtree.
               </>
             ) : (
               <>

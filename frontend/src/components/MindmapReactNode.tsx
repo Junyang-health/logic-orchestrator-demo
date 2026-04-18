@@ -75,22 +75,24 @@ function parseCriticalValues(metadata: Record<string, unknown>): CriticalPair[] 
 }
 
 export default function MindmapReactNode(props: { node?: Node }) {
+  const node = props.node;
+  const data = (node?.getData() ?? {}) as Record<string, unknown>;
+  const id = (data.id ?? node?.id ?? "") as string;
+
   const setSelectedNode = useUiStore((s) => s.setSelectedNode);
   const setActivePanel = useUiStore((s) => s.setActivePanel);
   const setReviewFocusNodeId = useUiStore((s) => s.setReviewFocusNodeId);
   const reviewComments = useUiStore((s) => s.reviewComments);
+  const isNewHighlighted = useUiStore((s) => Boolean(id && s.newMarkedNodeIds[id]));
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
   const riskRef = useRef<HTMLDivElement>(null);
   const valuesRef = useRef<HTMLDivElement>(null);
 
-  const node = props.node;
-  const data = (node?.getData() ?? {}) as Record<string, unknown>;
   const label = (data.label ?? node?.attr("label/text") ?? "") as string;
   const type = (data.type ?? "") as string;
   const metadata = (data.metadata ?? {}) as Record<string, unknown>;
-  const id = (data.id ?? node?.id ?? "") as string;
   const status = (data.status ?? "firm") as string;
   const rootHub = isRootHub(metadata);
   const violationSummary = (data.violation_summary ?? "").toString().trim();
@@ -130,7 +132,8 @@ export default function MindmapReactNode(props: { node?: Node }) {
     type,
     showRiskPanel,
     criticalPairs.length,
-    nodeComments.length
+    nodeComments.length,
+    isNewHighlighted
   ]);
 
   return (
@@ -273,6 +276,11 @@ export default function MindmapReactNode(props: { node?: Node }) {
           ) : (
             <span className="text-[11px] text-slate-600 dark:text-slate-300">{status}</span>
           )}
+          {isNewHighlighted ? (
+            <span className="rounded-full border border-lime-400 bg-lime-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-950 dark:border-lime-500/60 dark:bg-lime-950/50 dark:text-lime-100">
+              new
+            </span>
+          ) : null}
         </div>
       </div>
     </div>

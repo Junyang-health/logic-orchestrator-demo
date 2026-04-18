@@ -350,13 +350,161 @@ def simulate_optimism_and_patch(
     return merged, report
 
 
-def simulate_black_swan_and_patch(
+BLACK_SWAN_MECE_AXES = ("Technology", "Market", "Policy", "Operations", "Financial")
+
+BLACK_SWAN_SCAN_SYSTEM = """You return JSON only. No markdown.
+
+Schema:
+{"scenarios":[{"id":"bs_1","mece_axis":"Technology","title":"string","summary":"string","why_relevant":"string"}]}
+
+Rules:
+- Exactly 5 scenarios.
+- Each mece_axis MUST be one of: Technology, Market, Policy, Operations, Financial — use each label exactly once (MECE lenses).
+- Black-swan style: plausible-but-rare, high-impact shocks in a 1–3 year horizon for THIS branch (not generic trivia).
+- ids: stable unique strings (e.g. bs_1..bs_5).
+- title: <=120 chars. summary: 1–3 sentences. why_relevant: 1 sentence tied to branch content.
+"""
+
+
+BLACK_SWAN_RUN_SYSTEM = """You return JSON only. No markdown.
+
+Schema:
+{
+  "results": [
+    {
+      "scenario_id": "bs_1",
+      "potential_impacts": ["string"],
+      "gaps_to_address": [{"id":"g1","description":"string","severity":"high"}],
+      "mitigations": [{"id":"m1","title":"string","description":"string","addresses_gaps":["g1"]}]
+    }
+  ],
+  "executive_summary": "string"
+}
+
+Rules:
+- results MUST contain one entry per input scenario (same scenario_id values).
+- Each scenario: >=2 potential_impacts; >=2 gaps_to_address; >=2 mitigations.
+- gaps need unique ids per scenario (e.g. g1, g2). mitigations need unique ids per scenario (e.g. m1, m2).
+- addresses_gaps lists gap ids that mitigation closes or materially reduces.
+- severity: one of high, medium, low.
+- executive_summary: <=6 sentences across all selected scenarios.
+"""
+
+
+def _validate_scan_scenarios(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        raise ValueError("Black swan scan: expected a JSON object")
+    raw = data.get("scenarios")
+    if not isinstance(raw, list) or len(raw) != 5:
+        raise ValueError("Black swan scan: expected exactly 5 scenarios")
+    axes = set(BLACK_SWAN_MECE_AXES)
+    seen_axes: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError("Black swan scan: each scenario must be an object")
+        sid = str(item.get("id") or "").strip() or f"bs_{i + 1}"
+        axis = str(item.get("mece_axis") or "").strip()
+        if axis not in axes:
+            raise ValueError(f"Black swan scan: invalid mece_axis {axis!r}")
+        if axis in seen_axes:
+            raise ValueError(f"Black swan scan: duplicate mece_axis {axis!r} (MECE requires each once)")
+        seen_axes.add(axis)
+        title = str(item.get("title") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        if not title or not summary:
+            raise ValueError("Black swan scan: each scenario needs title and summary")
+        wr = str(item.get("why_relevant") or "").strip()
+        out.append({"id": sid, "mece_axis": axis, "title": title[:200], "summary": summary[:1200], "why_relevant": wr[:600]})
+    if seen_axes != axes:
+        missing = axes - seen_axes
+        raise ValueError(f"Black swan scan: missing MECE axes: {', '.join(sorted(missing))}")
+    return out
+
+
+def _validate_run_payload(data: Any, expected_ids: set[str]) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError("Black swan run: expected a JSON object")
+    results = data.get("results")
+    if not isinstance(results, list) or len(results) != len(expected_ids):
+        raise ValueError("Black swan run: results length must match selected scenarios")
+    got_ids: set[str] = set()
+    norm_results: list[dict[str, Any]] = []
+    for block in results:
+        if not isinstance(block, dict):
+            raise ValueError("Black swan run: each result must be an object")
+        sid = str(block.get("scenario_id") or "").strip()
+        if sid not in expected_ids:
+            raise ValueError(f"Black swan run: unexpected scenario_id {sid!r}")
+        got_ids.add(sid)
+        impacts = block.get("potential_impacts")
+        if not isinstance(impacts, list) or len(impacts) < 2:
+            raise ValueError(f"Black swan run: at least 2 potential_impacts required for {sid}")
+        impacts_s = [str(x).strip() for x in impacts if str(x).strip()][:24]
+        if len(impacts_s) < 2:
+            raise ValueError(f"Black swan run: potential_impacts too short for {sid}")
+        gaps_raw = block.get("gaps_to_address")
+        if not isinstance(gaps_raw, list) or len(gaps_raw) < 2:
+            raise ValueError(f"Black swan run: at least 2 gaps_to_address required for {sid}")
+        gaps: list[dict[str, Any]] = []
+        for g in gaps_raw[:12]:
+            if not isinstance(g, dict):
+                continue
+            gid = str(g.get("id") or "").strip()
+            desc = str(g.get("description") or "").strip()
+            if not gid or not desc:
+                continue
+            sev = str(g.get("severity") or "medium").strip().lower()
+            if sev not in ("high", "medium", "low"):
+                sev = "medium"
+            gaps.append({"id": gid[:32], "description": desc[:800], "severity": sev})
+        mits_raw = block.get("mitigations")
+        if not isinstance(mits_raw, list) or len(mits_raw) < 2:
+            raise ValueError(f"Black swan run: at least 2 mitigations required for {sid}")
+        mits: list[dict[str, Any]] = []
+        for m in mits_raw[:16]:
+            if not isinstance(m, dict):
+                continue
+            mid = str(m.get("id") or "").strip()
+            title = str(m.get("title") or "").strip()
+            desc = str(m.get("description") or "").strip()
+            if not mid or not title or not desc:
+                continue
+            ag = m.get("addresses_gaps")
+            ag_list: list[str] = []
+            if isinstance(ag, list):
+                ag_list = [str(x).strip() for x in ag if str(x).strip()][:16]
+            mits.append(
+                {
+                    "id": mid[:32],
+                    "title": title[:200],
+                    "description": desc[:1600],
+                    "addresses_gaps": ag_list,
+                }
+            )
+        if len(gaps) < 2 or len(mits) < 2:
+            raise ValueError(f"Black swan run: incomplete gaps/mitigations for {sid}")
+        norm_results.append(
+            {
+                "scenario_id": sid,
+                "potential_impacts": impacts_s,
+                "gaps_to_address": gaps,
+                "mitigations": mits,
+            }
+        )
+    if got_ids != expected_ids:
+        raise ValueError("Black swan run: scenario_id set must match selected scenarios")
+    summary = str(data.get("executive_summary") or "").strip()[:4000]
+    return {"results": norm_results, "executive_summary": summary}
+
+
+def black_swan_scan_scenarios(
     *,
     llm: LlmClient,
     branch_root_id: str,
     full_nodes: list[dict[str, Any]],
     full_edges: list[dict[str, Any]],
-) -> tuple[dict[str, Any], str]:
+) -> tuple[list[dict[str, Any]], str]:
     branch_nodes, branch_edges = _branch_context_lines(branch_root_id=branch_root_id, full_nodes=full_nodes, full_edges=full_edges)
     node_lines = [
         f"- id={n.get('id')} type={n.get('type') or ''} label={n.get('label') or ''} metadata={n.get('metadata')!r}"
@@ -364,21 +512,151 @@ def simulate_black_swan_and_patch(
     ]
     edge_lines = [f"- {e.get('source')} -> {e.get('target')} label={e.get('label') or ''}" for e in branch_edges[:280]]
 
-    report = "Black Swan simulation: identify 3 plausible rare events that would most disrupt this branch, then stress test assumptions and propose mitigations."
+    prompt = "\n".join(
+        [
+            f"Branch root id (context anchor): {branch_root_id}",
+            "",
+            "Task: Propose the top 5 black-swan-style scenarios for stress testing this branch.",
+            "Use the MECE axis assignment exactly as specified in the system schema (each axis once).",
+            "",
+            "Branch nodes:",
+            *node_lines,
+            "",
+            "Branch edges:",
+            *edge_lines,
+            "",
+            "Return ONLY the JSON object with key scenarios (5 items).",
+        ]
+    ).strip()
+
+    data = llm.generate_json(system=BLACK_SWAN_SCAN_SYSTEM, user=prompt)
+    scenarios = _validate_scan_scenarios(data)
+    report = "Scan complete: 5 MECE-scoped black swan candidates for this branch."
+    return scenarios, report
+
+
+def black_swan_run_simulation(
+    *,
+    llm: LlmClient,
+    branch_root_id: str,
+    full_nodes: list[dict[str, Any]],
+    full_edges: list[dict[str, Any]],
+    selected_scenarios: list[dict[str, Any]],
+) -> tuple[dict[str, Any], str]:
+    if not selected_scenarios:
+        raise ValueError("At least one scenario is required")
+    branch_nodes, branch_edges = _branch_context_lines(branch_root_id=branch_root_id, full_nodes=full_nodes, full_edges=full_edges)
+    node_lines = [
+        f"- id={n.get('id')} type={n.get('type') or ''} label={n.get('label') or ''} metadata={n.get('metadata')!r}"
+        for n in branch_nodes[:160]
+    ]
+    edge_lines = [f"- {e.get('source')} -> {e.get('target')} label={e.get('label') or ''}" for e in branch_edges[:280]]
+
+    expected_ids = {str(s.get("id") or "").strip() for s in selected_scenarios if isinstance(s, dict) and str(s.get("id") or "").strip()}
+    if not expected_ids:
+        raise ValueError("Selected scenarios must include ids")
+
+    prompt = "\n".join(
+        [
+            f"Branch root id (context anchor): {branch_root_id}",
+            "",
+            "Selected black swan scenarios (simulate only these):",
+            json.dumps(selected_scenarios, ensure_ascii=False),
+            "",
+            "For EACH selected scenario, estimate potential impacts on this branch, capability gaps to address,",
+            "and concrete mitigations. Mitigations should be actionable and map to gap ids.",
+            "",
+            "Branch nodes:",
+            *node_lines,
+            "",
+            "Branch edges:",
+            *edge_lines,
+            "",
+            "Return ONLY the JSON object matching the system schema (results + executive_summary).",
+        ]
+    ).strip()
+
+    data = llm.generate_json(system=BLACK_SWAN_RUN_SYSTEM, user=prompt)
+    bundle = _validate_run_payload(data, expected_ids)
+    report = bundle.get("executive_summary") or "Simulation complete: impacts, gaps, and mitigations per scenario."
+    if not isinstance(report, str):
+        report = str(report)
+    return bundle, report
+
+
+def black_swan_apply_mitigations_patch(
+    *,
+    llm: LlmClient,
+    branch_root_id: str,
+    full_nodes: list[dict[str, Any]],
+    full_edges: list[dict[str, Any]],
+    scenarios: list[dict[str, Any]],
+    run_bundle: dict[str, Any],
+    selections: list[tuple[str, str]],
+) -> tuple[dict[str, Any], str]:
+    """selections: (scenario_id, mitigation_id) pairs validated by caller."""
+    if not selections:
+        raise ValueError("Select at least one mitigation to apply")
+
+    results = run_bundle.get("results")
+    if not isinstance(results, list):
+        raise ValueError("run_bundle missing results")
+
+    by_sid: dict[str, dict[str, Any]] = {}
+    for block in results:
+        if isinstance(block, dict) and block.get("scenario_id"):
+            by_sid[str(block["scenario_id"])] = block
+
+    scenario_by_id = {str(s.get("id")): s for s in scenarios if isinstance(s, dict) and s.get("id")}
+
+    chosen: list[dict[str, Any]] = []
+    for sid, mid in selections:
+        block = by_sid.get(sid)
+        if not block:
+            continue
+        mits = block.get("mitigations")
+        if not isinstance(mits, list):
+            continue
+        mit = next((m for m in mits if isinstance(m, dict) and str(m.get("id")) == mid), None)
+        if not mit:
+            raise ValueError(f"Mitigation {mid!r} not found for scenario {sid!r}")
+        scen = scenario_by_id.get(sid, {})
+        gaps = block.get("gaps_to_address") if isinstance(block.get("gaps_to_address"), list) else []
+        chosen.append(
+            {
+                "scenario_id": sid,
+                "scenario_title": scen.get("title", ""),
+                "mece_axis": scen.get("mece_axis", ""),
+                "potential_impacts": block.get("potential_impacts", []),
+                "gaps_to_address": gaps,
+                "mitigation": mit,
+            }
+        )
+
+    branch_nodes, branch_edges = _branch_context_lines(branch_root_id=branch_root_id, full_nodes=full_nodes, full_edges=full_edges)
+    node_lines = [
+        f"- id={n.get('id')} type={n.get('type') or ''} label={n.get('label') or ''} metadata={n.get('metadata')!r}"
+        for n in branch_nodes[:160]
+    ]
+    edge_lines = [f"- {e.get('source')} -> {e.get('target')} label={e.get('label') or ''}" for e in branch_edges[:280]]
+
+    report = f"Applied {len(chosen)} mitigation(s) from black swan simulation to the branch."
 
     prompt = "\n".join(
         [
             f"Branch root id (do not remove): {branch_root_id}",
             "",
-            "Simulation: Black Swan stress test.",
-            "Step 1: Select the 3 closest/most relevant black swan events for THIS branch context (not generic).",
-            "Step 2: For each event, list what breaks (assumptions, dependencies) and propose mitigations.",
-            "Step 3: Update the mindmap branch by adding 4-10 nodes total:",
-            "- 3 event nodes (Inferred) with concise labels",
-            "- 1-3 impact nodes",
-            "- 2-4 mitigation nodes (actions/contingencies)",
-            "Connect them under the branch root with clear edge labels (e.g. 'risk', 'impact', 'mitigation').",
-            "Do not invent citations/URLs; use Evidence nodes only if the branch already includes evidence snippets to cite.",
+            "Black Swan — user-selected mitigations to materialize on the mindmap.",
+            "Add structured nodes under the branch root so the map captures:",
+            "- each scenario title (or a short 'risk lens' parent)",
+            "- key impacts (brief)",
+            "- each chosen mitigation as actionable items (Inferred)",
+            "- optional links from mitigation to related gaps (labels on edges).",
+            "Prefer 6–14 new nodes total across all mitigations; stay readable.",
+            "Do not invent citations/URLs; Evidence nodes only if citing existing branch snippets with metadata.source_filename + text_snippet.",
+            "",
+            "Chosen mitigations JSON:",
+            json.dumps(chosen, ensure_ascii=False),
             "",
             "Branch nodes:",
             *node_lines,
