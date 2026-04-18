@@ -1,0 +1,92 @@
+import { useEffect, useMemo, useRef } from "react";
+import { Graph, Node } from "@antv/x6";
+import { Dnd } from "@antv/x6-plugin-dnd";
+import useUiStore from "../store/useUiStore";
+
+type PaletteItem = {
+  id: string;
+  label: string;
+  type: string;
+};
+
+const PALETTE: PaletteItem[] = [
+  { id: "evidence", label: "Evidence", type: "evidence" },
+  { id: "inferred", label: "Inferred", type: "inferred" }
+];
+
+export default function SidebarPalette(props: { graph: Graph | null }) {
+  const sandboxMode = useUiStore((s) => s.sandboxMode);
+  const dndRef = useRef<Dnd | null>(null);
+
+  const sourceNode = useMemo(() => {
+    // Template node used for cloning during DnD.
+    return new Node({
+      shape: "mindmap-react-node",
+      width: 280,
+      height: 96,
+      data: {
+        id: "",
+        type: "inferred",
+        label: "New node",
+        metadata: {},
+        status: "draft"
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!props.graph) return;
+    dndRef.current = new Dnd({
+      target: props.graph,
+      getDragNode: () => {
+        const isSandbox = Boolean((props.graph as any)?.prop?.("sandboxContext"));
+        const clone = sourceNode.clone();
+        const d = (clone.getData() ?? {}) as any;
+        clone.setData({ ...d, status: isSandbox ? "draft" : "firm" }, { overwrite: true });
+        return clone;
+      }
+    });
+    return () => {
+      dndRef.current = null;
+    };
+  }, [props.graph, sourceNode]);
+
+  return (
+    <div className="h-full w-[180px] border-r border-slate-200 bg-white p-3">
+      <div className="mb-2 text-xs font-semibold text-slate-800">Palette</div>
+      <div className="mb-3 text-[11px] text-slate-600">
+        Mode: <span className="font-medium">{sandboxMode ? "Sandbox (Draft)" : "Main (Firm)"}</span>
+      </div>
+      <div className="space-y-2">
+        {PALETTE.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className="w-full rounded border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onMouseDown={(e) => {
+              if (!props.graph || !dndRef.current) return;
+              const id = `n_${Math.random().toString(16).slice(2, 10)}`;
+              const isSandbox = Boolean((props.graph as any).prop?.("sandboxContext"));
+              const n = sourceNode.clone();
+              n.setData(
+                {
+                  id,
+                  type: item.type,
+                  label: item.label,
+                  metadata: {},
+                  status: isSandbox ? "draft" : "firm"
+                },
+                { overwrite: true }
+              );
+              dndRef.current.start(n, e.nativeEvent as any);
+            }}
+          >
+            <div className="font-medium">{item.label}</div>
+            <div className="mt-0.5 text-[11px] text-slate-500">drag onto canvas</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+

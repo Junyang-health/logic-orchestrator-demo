@@ -1,0 +1,420 @@
+import { create } from "zustand";
+import { combineGraphs } from "../lib/graphBranch";
+import { normalizeMindmapJsonNodeTypes, normalizeMindmapNodeType } from "../lib/normalizeMindmapNodeType";
+import type { MindmapEdge, MindmapJson, MindmapNode } from "../types/mindmap";
+import type { ReviewComment } from "../types/review";
+import type { SourceFileEntry } from "../types/sourceMaterial";
+
+type PanelKey = "source" | "review";
+
+export type MindmapNodePayload = {
+  id: string;
+  type?: string;
+  label?: string;
+  metadata?: Record<string, unknown>;
+  status?: MindmapNode["status"];
+  clusterId?: string;
+  violation_summary?: string;
+  inferred_consequences?: string;
+};
+
+type GraphState = {
+  mainGraph: MindmapJson | null;
+  sandboxGraph: MindmapJson;
+  sandboxMode: boolean;
+  setSandboxMode: (on: boolean) => void;
+  clearSandbox: () => void;
+  mergeSandboxIntoMain: () => void;
+  loadMainGraph: (graph: MindmapJson) => void;
+  addNode: (node: MindmapNode) => void;
+  addEdge: (edge: MindmapEdge) => void;
+  removeNode: (nodeId: string) => void;
+  removeEdge: (source: string, target: string, label?: string) => void;
+
+  // Sub-agent / clustering
+  agentId: string;
+  setAgentId: (agentId: string) => void;
+  clusterByNodeId: Record<string, string>;
+  clusterAssignments: Record<string, string>; // clusterId -> agentId
+  numAgents: number;
+  setNumAgents: (n: number) => void;
+};
+
+export type SkillKey = "webSearch" | "financialAnalyst";
+
+type SkillsState = {
+  skills: Record<SkillKey, boolean>;
+  toggleSkill: (key: SkillKey) => void;
+};
+
+type ReviewState = {
+  reviewPersona: string;
+  setReviewPersona: (persona: string) => void;
+  reviewComments: ReviewComment[];
+  /** Branch root used for the last "Review branch" scan (needed to apply comments safely). */
+  reviewBranchRootId: string | null;
+  setReviewComments: (
+    comments: Omit<ReviewComment, "id" | "persona">[],
+    persona: string,
+    branchRootId?: string | null
+  ) => void;
+  clearReviewComments: () => void;
+  reviewFocusNodeId: string | null;
+  setReviewFocusNodeId: (id: string | null) => void;
+  reviewLoading: boolean;
+  setReviewLoading: (v: boolean) => void;
+};
+
+type SourceMaterialState = {
+  sourceFiles: SourceFileEntry[];
+  addSourceFiles: (files: File[]) => void;
+  removeSourceFile: (id: string) => void;
+  clearSourceFiles: () => void;
+};
+
+const ASSISTANT_DOCK_W_KEY = "mindmap_assistant_dock_width_px";
+
+function readAssistantDockWidthPx(): number {
+  try {
+    const n = Number(localStorage.getItem(ASSISTANT_DOCK_W_KEY));
+    if (Number.isFinite(n)) return Math.min(720, Math.max(260, Math.round(n)));
+  } catch {
+    /* ignore */
+  }
+  return 300;
+}
+
+function readDockOpen(key: string, defaultOpen: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === "0") return false;
+    if (v === "1") return true;
+  } catch {
+    /* ignore */
+  }
+  return defaultOpen;
+}
+
+type UiState = {
+  activePanel: PanelKey;
+  setActivePanel: (panel: PanelKey) => void;
+  selectedNode: MindmapNodePayload | null;
+  setSelectedNode: (node: MindmapNodePayload | null) => void;
+  theme: "light" | "dark";
+  setTheme: (t: "light" | "dark") => void;
+  toggleTheme: () => void;
+  assistantActive: boolean;
+  setAssistantActive: (on: boolean) => void;
+  /** Whole left assistant column visible (vs collapsed to edge tab). */
+  assistantDockOpen: boolean;
+  setAssistantDockOpen: (open: boolean) => void;
+  /** Right Source/Review column visible. */
+  rightDockOpen: boolean;
+  setRightDockOpen: (open: boolean) => void;
+  assistantDockWidthPx: number;
+  setAssistantDockWidthPx: (w: number) => void;
+} & SkillsState &
+  ReviewState &
+  SourceMaterialState;
+
+function computeClusters(graph: MindmapJson): Record<string, string> {
+  const nodeIds = new Set(graph.nodes.map((n) => n.id));
+  const adj = new Map<string, Set<string>>();
+  for (const id of nodeIds) adj.set(id, new Set());
+  for (const e of graph.edges) {
+    if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue;
+    adj.get(e.source)!.add(e.target);
+    adj.get(e.target)!.add(e.source);
+  }
+
+  const visited = new Set<string>();
+  const clusterByNodeId: Record<string, string> = {};
+  let clusterIdx = 0;
+
+  for (const id of nodeIds) {
+    if (visited.has(id)) continue;
+    const cid = `cluster-${clusterIdx++}`;
+    const stack = [id];
+    visited.add(id);
+    while (stack.length) {
+      const cur = stack.pop()!;
+      clusterByNodeId[cur] = cid;
+      for (const nb of adj.get(cur) ?? []) {
+        if (visited.has(nb)) continue;
+        visited.add(nb);
+        stack.push(nb);
+      }
+    }
+  }
+  return clusterByNodeId;
+}
+
+function computeAssignments(clusterByNodeId: Record<string, string>, numAgents: number) {
+  const clusterIds = Array.from(new Set(Object.values(clusterByNodeId))).sort();
+  const assignments: Record<string, string> = {};
+  const n = Math.max(1, Math.floor(numAgents || 1));
+  for (let i = 0; i < clusterIds.length; i++) {
+    assignments[clusterIds[i]] = `agent-${(i % n) + 1}`;
+  }
+  return assignments;
+}
+
+const useUiStore = create<UiState & GraphState>((set, get) => ({
+  activePanel: "source",
+  setActivePanel: (panel) => set({ activePanel: panel }),
+  selectedNode: null,
+  setSelectedNode: (node) => set({ selectedNode: node }),
+  theme: "light",
+  setTheme: (t) => set({ theme: t }),
+  toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
+  assistantActive: false,
+  setAssistantActive: (on) => set({ assistantActive: on }),
+  assistantDockOpen: readDockOpen("mindmap_assistant_dock_open", true),
+  setAssistantDockOpen: (open) => {
+    try {
+      localStorage.setItem("mindmap_assistant_dock_open", open ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    set({ assistantDockOpen: open });
+  },
+  rightDockOpen: readDockOpen("mindmap_right_dock_open", true),
+  setRightDockOpen: (open) => {
+    try {
+      localStorage.setItem("mindmap_right_dock_open", open ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    set({ rightDockOpen: open });
+  },
+  assistantDockWidthPx: readAssistantDockWidthPx(),
+  setAssistantDockWidthPx: (w) => {
+    const clamped = Math.min(720, Math.max(260, Math.round(w)));
+    try {
+      localStorage.setItem(ASSISTANT_DOCK_W_KEY, String(clamped));
+    } catch {
+      /* ignore */
+    }
+    set({ assistantDockWidthPx: clamped });
+  },
+
+  skills: { webSearch: false, financialAnalyst: false },
+  toggleSkill: (key) =>
+    set((s) => ({
+      skills: { ...s.skills, [key]: !s.skills[key] }
+    })),
+
+  reviewPersona: "Skeptical Investor",
+  setReviewPersona: (persona) => set({ reviewPersona: persona }),
+  reviewComments: [],
+  reviewBranchRootId: null,
+  setReviewComments: (items, persona, branchRootId) =>
+    set((s) => ({
+      reviewComments: items.map((c, i) => ({
+        ...c,
+        id: `c_${persona}_${c.nodeId}_${i}`,
+        persona
+      })),
+      reviewBranchRootId:
+        branchRootId === undefined ? s.reviewBranchRootId : branchRootId === null ? null : branchRootId
+    })),
+  clearReviewComments: () => set({ reviewComments: [], reviewFocusNodeId: null, reviewBranchRootId: null }),
+  reviewFocusNodeId: null,
+  setReviewFocusNodeId: (id) => set({ reviewFocusNodeId: id }),
+  reviewLoading: false,
+  setReviewLoading: (v) => set({ reviewLoading: v }),
+
+  sourceFiles: [],
+  addSourceFiles: (files) =>
+    set((s) => {
+      const next = [...s.sourceFiles];
+      const t = Date.now();
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        next.push({
+          id: `sf_${t}_${i}_${Math.random().toString(16).slice(2, 10)}`,
+          file,
+          addedAt: t
+        });
+      }
+      return { sourceFiles: next };
+    }),
+  removeSourceFile: (id) =>
+    set((s) => ({ sourceFiles: s.sourceFiles.filter((e) => e.id !== id) })),
+  clearSourceFiles: () => set({ sourceFiles: [] }),
+
+  mainGraph: null,
+  sandboxGraph: { nodes: [], edges: [] },
+  sandboxMode: false,
+  setSandboxMode: (on) => set({ sandboxMode: on }),
+  clearSandbox: () => set({ sandboxGraph: { nodes: [], edges: [] } }),
+  mergeSandboxIntoMain: () => {
+    const st = get();
+    if (!st.mainGraph) {
+      // If no main graph loaded yet, promote sandbox to main.
+      const promoted: MindmapJson = normalizeMindmapJsonNodeTypes({
+        nodes: st.sandboxGraph.nodes.map((n) => ({ ...n, status: "firm" })),
+        edges: st.sandboxGraph.edges.map((e) => ({ ...e, status: "firm" }))
+      });
+      const clusterByNodeId = computeClusters(promoted);
+      set({
+        mainGraph: promoted,
+        sandboxGraph: { nodes: [], edges: [] },
+        clusterByNodeId,
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      });
+      return;
+    }
+
+    const main = st.mainGraph;
+    const sandbox = st.sandboxGraph;
+    /** Same id-resolution as assistant apply (`combineGraphs`): sandbox overlays main, then firm. */
+    const combined = combineGraphs(main, sandbox);
+    const merged: MindmapJson = normalizeMindmapJsonNodeTypes({
+      nodes: combined.nodes.map((n) => ({ ...n, status: "firm" as const })),
+      edges: combined.edges.map((e) => ({ ...e, status: "firm" as const }))
+    });
+    const clusterByNodeId = computeClusters(merged);
+    set({
+      mainGraph: merged,
+      sandboxGraph: { nodes: [], edges: [] },
+      clusterByNodeId,
+      clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+    });
+  },
+  loadMainGraph: (graph) => {
+    const st = get();
+    const normalized: MindmapJson = normalizeMindmapJsonNodeTypes({
+      nodes: graph.nodes.map((n) => ({ ...n, status: n.status ?? "firm" })),
+      edges: graph.edges.map((e) => ({ ...e, status: e.status ?? "firm" }))
+    });
+    const clusterByNodeId = computeClusters(normalized);
+    set({
+      mainGraph: normalized,
+      clusterByNodeId,
+      clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+    });
+  },
+  addNode: (node) => {
+    const st = get();
+    const targetKey = st.sandboxMode ? "sandboxGraph" : "mainGraph";
+    const status = st.sandboxMode ? ("draft" as const) : ("firm" as const);
+    const normalized: MindmapNode = {
+      ...node,
+      type: normalizeMindmapNodeType(node.type),
+      status: node.status ?? status
+    };
+    if (targetKey === "mainGraph") {
+      const cur = st.mainGraph ?? { nodes: [], edges: [] };
+      const idx = cur.nodes.findIndex((n) => n.id === node.id);
+      const nodes =
+        idx >= 0 ? cur.nodes.map((n, i) => (i === idx ? { ...n, ...normalized } : n)) : [...cur.nodes, normalized];
+      const next = { ...cur, nodes };
+      const clusterByNodeId = computeClusters(next);
+      set({
+        mainGraph: next,
+        clusterByNodeId,
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      });
+    } else {
+      const cur = st.sandboxGraph;
+      const idx = cur.nodes.findIndex((n) => n.id === node.id);
+      const nodes =
+        idx >= 0 ? cur.nodes.map((n, i) => (i === idx ? { ...n, ...normalized } : n)) : [...cur.nodes, normalized];
+      set({ sandboxGraph: { ...cur, nodes } });
+    }
+  },
+  addEdge: (edge) => {
+    const st = get();
+    const targetKey = st.sandboxMode ? "sandboxGraph" : "mainGraph";
+    const status = st.sandboxMode ? ("draft" as const) : ("firm" as const);
+    const key = `${edge.source}→${edge.target}::${edge.label ?? ""}`;
+
+    if (targetKey === "mainGraph") {
+      const cur = st.mainGraph ?? { nodes: [], edges: [] };
+      const edges = cur.edges.some((e) => `${e.source}→${e.target}::${e.label ?? ""}` === key)
+        ? cur.edges
+        : [...cur.edges, { ...edge, status: edge.status ?? status }];
+      const next = { ...cur, edges };
+      const clusterByNodeId = computeClusters(next);
+      set({
+        mainGraph: next,
+        clusterByNodeId,
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      });
+    } else {
+      const cur = st.sandboxGraph;
+      const edges = cur.edges.some((e) => `${e.source}→${e.target}::${e.label ?? ""}` === key)
+        ? cur.edges
+        : [...cur.edges, { ...edge, status: edge.status ?? status }];
+      set({ sandboxGraph: { ...cur, edges } });
+    }
+  },
+
+  removeNode: (nodeId) => {
+    const st = get();
+    const targetKey = st.sandboxMode ? "sandboxGraph" : "mainGraph";
+    if (targetKey === "mainGraph") {
+      const cur = st.mainGraph ?? { nodes: [], edges: [] };
+      const nodes = cur.nodes.filter((n) => n.id !== nodeId);
+      const edges = cur.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+      const next = { ...cur, nodes, edges };
+      const clusterByNodeId = computeClusters(next);
+      set({
+        mainGraph: next,
+        clusterByNodeId,
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      });
+    } else {
+      const cur = st.sandboxGraph;
+      set({
+        sandboxGraph: {
+          nodes: cur.nodes.filter((n) => n.id !== nodeId),
+          edges: cur.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
+        }
+      });
+    }
+  },
+
+  removeEdge: (source, target, label) => {
+    const st = get();
+    const targetKey = st.sandboxMode ? "sandboxGraph" : "mainGraph";
+    const key = `${source}→${target}::${label ?? ""}`;
+    if (targetKey === "mainGraph") {
+      const cur = st.mainGraph ?? { nodes: [], edges: [] };
+      const edges = cur.edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key);
+      const next = { ...cur, edges };
+      const clusterByNodeId = computeClusters(next);
+      set({
+        mainGraph: next,
+        clusterByNodeId,
+        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+      });
+    } else {
+      const cur = st.sandboxGraph;
+      set({
+        sandboxGraph: {
+          ...cur,
+          edges: cur.edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key)
+        }
+      });
+    }
+  },
+
+  agentId: "agent-1",
+  setAgentId: (agentId) => set({ agentId }),
+  clusterByNodeId: {},
+  clusterAssignments: {},
+  numAgents: 3,
+  setNumAgents: (n) => {
+    const st = get();
+    const numAgents = Math.max(1, Math.floor(n || 1));
+    set({
+      numAgents,
+      clusterAssignments: computeAssignments(st.clusterByNodeId, numAgents)
+    });
+  }
+}));
+
+export default useUiStore;
+

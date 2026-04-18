@@ -1,0 +1,467 @@
+{
+  "updated_at_ms": 1776491185894,
+  "nodes": [
+    {
+      "id": "root",
+      "type": "inferred",
+      "label": "国内病理大模型现状与泛癌肿多模态模型出路",
+      "metadata": {
+        "critical_values": [],
+        "is_root": true
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n1",
+      "type": "inferred",
+      "label": "主要国内病理大模型项目概览",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n2",
+      "type": "inferred",
+      "label": "核心能力与技术特点",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n3",
+      "type": "inferred",
+      "label": "商业化与开源模式",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n4",
+      "type": "inferred",
+      "label": "数字化病理全流程与AI介入点",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e1",
+      "type": "evidence",
+      "label": "RuiPath（瑞金病理模型）发布信息",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "(一) 病理AI大模型现状 1. RuiPath（瑞金病理模型） 发布单位：上海瑞金医院联合华为（华为盘古病理大模型） 发布时间：2025年2月",
+        "page_number": 1,
+        "critical_values": [
+          {
+            "label": "发布时间",
+            "value": "2025年2月"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e2",
+      "type": "evidence",
+      "label": "RuiPath商业与开源情况",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "商业情况：2025年6月部分开源（架构+数据集），权重需学术申请开源版本提供了基础的特征提取能力和预训练权重，供科研人员复现和改进；院内临床版未开源，仅内部使用；商用（需授权），华为云服务 / 医院定制。 开源许可证：瑞金官方并未将其标记为宽松的 MIT 或 Apache 2.0，RuiPath 采用的是一种非商业用途限制的学术协议",
+        "page_number": 1,
+        "critical_values": [
+          {
+            "label": "部分开源时间",
+            "value": "2025年6月"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e3",
+      "type": "evidence",
+      "label": "RuiPath核心特点与规模",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "核心特点： ü 基于近30万张全切片数字病理图像（约300TB）训练 ü 覆盖肺、乳腺、肝脏、食管等20余种器官 ü 在近50项临床任务中准确率超95% ü 是国内首个病理大模型，也是全球临床任务覆盖最广的病理大模型之一",
+        "page_number": 2,
+        "critical_values": [
+          {
+            "label": "训练数据量",
+            "value": "近30万张全切片数字病理图像（约300TB）"
+          },
+          {
+            "label": "覆盖器官数",
+            "value": "20余种"
+          },
+          {
+            "label": "临床任务准确率",
+            "value": "超95%"
+          },
+          {
+            "label": "临床任务数量",
+            "value": "近50项"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e4",
+      "type": "evidence",
+      "label": "DeepGEM发布与商业情况",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "3. DeepGEM 发布单位：广州医科大学附属第一医院联合腾讯、金域医学 发布时间：2025年10月落地部署 商业情况：未开源，商业产品（腾讯医疗 AI 实验室是核心技术方，腾讯已与金域医学达成战略合作，通过金域的渠道进行商业化落地。）",
+        "page_number": 2,
+        "critical_values": [
+          {
+            "label": "发布时间",
+            "value": "2025年10月落地部署"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e5",
+      "type": "evidence",
+      "label": "DeepGEM核心特点",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "核心特点： ü 首个病理+基因多模态大模型 ü 可通过常…",
+        "page_number": 2,
+        "critical_values": [
+          {
+            "label": "模型类型",
+            "value": "首个病理+基因多模态大模型"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e6",
+      "type": "evidence",
+      "label": "SooPathAI发布与特点",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "发布时间：2025年4月 商业情况：未开源，学术展示，不可商用 其他情况： ü 与四川大学华西口腔医院联合，HXDental-PathAI全球首个口腔病理大模型 ü 与苏州大学附属第一医院联合，SooPathAI 核心特点： ü 全球首个融合镜下视野与全场图的多模态病理大模型 ü 支持40种癌种智能分析 ü 0.5秒完成切片分析，可“读病历”结合基因、病史等信息",
+        "page_number": 3,
+        "critical_values": [
+          {
+            "label": "发布时间",
+            "value": "2025年4月"
+          },
+          {
+            "label": "支持癌种数",
+            "value": "40种"
+          },
+          {
+            "label": "切片分析速度",
+            "value": "0.5秒"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n5",
+      "type": "inferred",
+      "label": "多模态融合成为趋势",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n6",
+      "type": "inferred",
+      "label": "高精度与广覆盖是核心指标",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n7",
+      "type": "inferred",
+      "label": "开源策略分化",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n8",
+      "type": "inferred",
+      "label": "商业化路径依赖合作渠道",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e7",
+      "type": "evidence",
+      "label": "数字化病理第一阶段",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "(二) 数字化病理的全流程 第一阶段：标本准备与切片制作（Pre-Analytics） 这是数字化数字化的基础，切片质量直接决定了扫描成像的效果。 1. 组织固定与包埋： 离体组织经过福尔马林固定，并包埋在石蜡块中（FFPE）。 2. 制片与染色： 使用切片机将组织切成 3-5 微米的极薄片，贴在载玻片上。 3. 染色： 进行常规 H&E 染色（显示细胞核与胞浆结构）或 IHC 免疫组化染色（显示特定蛋白表达） 。 关键点： 数字化病理对切片的平整度、无气泡、无尘埃要求极高…",
+        "page_number": 4,
+        "critical_values": [
+          {
+            "label": "切片厚度",
+            "value": "3-5 微米"
+          }
+        ]
+      },
+      "status": "firm"
+    },
+    {
+      "id": "e8",
+      "type": "evidence",
+      "label": "AI辅助分析阶段",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "第四阶段：AI 辅助分析与诊断（Analysis & Interpretation） 病理AI大模型发挥作用的阶段。 1. 数字化阅片： 病理医生在电脑显示器上代替显微镜进行阅片，支持无级缩放、标注、多屏对比。 2. AI 辅助介入： o 初筛与导航： AI 自动定位疑似癌区，节省医生寻找病灶的时间。 o 定量分析： AI 自动计算核分裂象计数、Ki-67 阳性率、肿瘤比例等（比肉眼更精…",
+        "page_number": 5,
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n9",
+      "type": "inferred",
+      "label": "高质量数据制备是模型基础",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "n10",
+      "type": "inferred",
+      "label": "AI在诊断流程中定位为辅助工具",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_market_sizing",
+      "label": "市场测算",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_tam",
+      "label": "TAM ~60亿人民币",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_sam",
+      "label": "SAM ~25亿人民币",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_som",
+      "label": "SOM (3年) ~0.75亿人民币",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_evidence_tam",
+      "label": "2025年中国AI病理市场规模数据",
+      "type": "evidence",
+      "metadata": {
+        "source_filename": "assistant_notes.txt",
+        "text_snippet": "根据搜索结果，2025年中国AI病理市场规模有望达57亿元（人民币），作为TAM基准。",
+        "critical_values": []
+      },
+      "status": "firm"
+    }
+  ],
+  "edges": [
+    {
+      "source": "root",
+      "target": "n1",
+      "label": "概述",
+      "status": "firm"
+    },
+    {
+      "source": "root",
+      "target": "n2",
+      "label": "分析",
+      "status": "firm"
+    },
+    {
+      "source": "root",
+      "target": "n3",
+      "label": "分析",
+      "status": "firm"
+    },
+    {
+      "source": "root",
+      "target": "n4",
+      "label": "背景",
+      "status": "firm"
+    },
+    {
+      "source": "n1",
+      "target": "e1",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "n1",
+      "target": "e4",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "n1",
+      "target": "e6",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "n2",
+      "target": "n5",
+      "label": "体现",
+      "status": "firm"
+    },
+    {
+      "source": "n2",
+      "target": "n6",
+      "label": "体现",
+      "status": "firm"
+    },
+    {
+      "source": "n5",
+      "target": "e5",
+      "label": "例证",
+      "status": "firm"
+    },
+    {
+      "source": "n5",
+      "target": "e6",
+      "label": "例证",
+      "status": "firm"
+    },
+    {
+      "source": "n6",
+      "target": "e3",
+      "label": "支撑",
+      "status": "firm"
+    },
+    {
+      "source": "n6",
+      "target": "e6",
+      "label": "支撑",
+      "status": "firm"
+    },
+    {
+      "source": "n3",
+      "target": "n7",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "n3",
+      "target": "n8",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "n7",
+      "target": "e2",
+      "label": "依据",
+      "status": "firm"
+    },
+    {
+      "source": "n8",
+      "target": "e2",
+      "label": "依据",
+      "status": "firm"
+    },
+    {
+      "source": "n8",
+      "target": "e4",
+      "label": "依据",
+      "status": "firm"
+    },
+    {
+      "source": "n4",
+      "target": "n9",
+      "label": "推断",
+      "status": "firm"
+    },
+    {
+      "source": "n4",
+      "target": "n10",
+      "label": "推断",
+      "status": "firm"
+    },
+    {
+      "source": "n9",
+      "target": "e7",
+      "label": "依据",
+      "status": "firm"
+    },
+    {
+      "source": "n10",
+      "target": "e8",
+      "label": "依据",
+      "status": "firm"
+    },
+    {
+      "source": "root",
+      "target": "rev_market_sizing",
+      "label": "分析",
+      "status": "firm"
+    },
+    {
+      "source": "rev_market_sizing",
+      "target": "rev_tam",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "rev_market_sizing",
+      "target": "rev_sam",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "rev_market_sizing",
+      "target": "rev_som",
+      "label": "包含",
+      "status": "firm"
+    },
+    {
+      "source": "rev_tam",
+      "target": "rev_evidence_tam",
+      "label": "依据",
+      "status": "firm"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "models": [
+    "gemini-2.5-flash",
+    "deepseek:deepseek-chat"
+  ],
+  "current": "deepseek:deepseek-chat"
+}
