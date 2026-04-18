@@ -1,4 +1,6 @@
-# AntV X6 + FastAPI (Vite + React + TS)
+# unbox-demo
+
+AntV X6 + FastAPI (Vite + React + TS)
 
 ## Structure
 
@@ -64,9 +66,8 @@ git add .
 git status   # confirm venv/node_modules are not listed
 git commit -m "Initial commit"
 git branch -M main
-git remote add origin <your-remote-url>
+git remote add origin https://github.com/OWNER/REPO.git
 git push -u origin main
 ```
 
 Use a **private** remote for trials if the repo might ever contain notes or keys. Never commit `.env` or real API keys.
-
