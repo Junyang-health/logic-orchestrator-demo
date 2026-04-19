@@ -1,5 +1,6 @@
 import type { Node } from "@antv/x6";
 import { useLayoutEffect, useMemo, useRef } from "react";
+import { REVIEW_COMMENT_COUNT_DATA_KEY } from "../lib/syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
 
 const NODE_W = 280;
@@ -82,7 +83,6 @@ export default function MindmapReactNode(props: { node?: Node }) {
   const setSelectedNode = useUiStore((s) => s.setSelectedNode);
   const setActivePanel = useUiStore((s) => s.setActivePanel);
   const setReviewFocusNodeId = useUiStore((s) => s.setReviewFocusNodeId);
-  const reviewComments = useUiStore((s) => s.reviewComments);
   const isNewHighlighted = useUiStore((s) => Boolean(id && s.newMarkedNodeIds[id]));
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -98,7 +98,10 @@ export default function MindmapReactNode(props: { node?: Node }) {
   const violationSummary = (data.violation_summary ?? "").toString().trim();
   const inferredConsequences = (data.inferred_consequences ?? "").toString().trim();
   const upstreamConflict = (data.upstream_conflict_summary ?? "").toString().trim();
-  const nodeComments = id ? reviewComments.filter((c) => c.nodeId === id) : [];
+  const reviewCommentCount =
+    typeof data[REVIEW_COMMENT_COUNT_DATA_KEY] === "number"
+      ? (data[REVIEW_COMMENT_COUNT_DATA_KEY] as number)
+      : 0;
   const criticalKey = JSON.stringify(metadata.critical_values ?? null);
   const criticalPairs = useMemo(() => parseCriticalValues(metadata), [criticalKey]);
 
@@ -132,13 +135,13 @@ export default function MindmapReactNode(props: { node?: Node }) {
     type,
     showRiskPanel,
     criticalPairs.length,
-    nodeComments.length,
+    reviewCommentCount,
     isNewHighlighted
   ]);
 
   return (
     <div className="relative h-full w-full">
-      {nodeComments.length > 0 && (
+      {reviewCommentCount > 0 ? (
         <button
           type="button"
           className="absolute -right-1 -top-1 z-10 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-1 text-[11px] shadow-sm hover:bg-amber-100 dark:border-amber-500/50 dark:bg-amber-950/40 dark:hover:bg-amber-950/60"
@@ -150,9 +153,9 @@ export default function MindmapReactNode(props: { node?: Node }) {
           }}
         >
           <span aria-hidden>💬</span>
-          <span className="ml-0.5 font-medium text-amber-900 dark:text-amber-100">{nodeComments.length}</span>
+          <span className="ml-0.5 font-medium text-amber-900 dark:text-amber-100">{reviewCommentCount}</span>
         </button>
-      )}
+      ) : null}
       <div
         className={[
           "flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-md border px-3 py-2 shadow-sm",

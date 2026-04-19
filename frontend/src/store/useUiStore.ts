@@ -179,6 +179,39 @@ function computeAssignments(clusterByNodeId: Record<string, string>, numAgents: 
   return assignments;
 }
 
+/** Debounce `computeClusters` on rapid main-graph edits (add/remove node/edge). */
+const CLUSTER_DEBOUNCE_MS = 120;
+let clusterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushClusterDebounce() {
+  if (clusterDebounceTimer != null) {
+    clearTimeout(clusterDebounceTimer);
+    clusterDebounceTimer = null;
+  }
+}
+
+type Store = UiState & GraphState;
+type StoreSet = (partial: Partial<Store> | ((state: Store) => Partial<Store>)) => void;
+type StoreGet = () => Store;
+
+function applyClustersFromMainGraph(set: StoreSet, get: StoreGet) {
+  const st = get();
+  const main = st.mainGraph ?? { nodes: [], edges: [] };
+  const clusterByNodeId = computeClusters(main);
+  set({
+    clusterByNodeId,
+    clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents)
+  });
+}
+
+function scheduleDebouncedClustersFromMain(set: StoreSet, get: StoreGet) {
+  flushClusterDebounce();
+  clusterDebounceTimer = window.setTimeout(() => {
+    clusterDebounceTimer = null;
+    applyClustersFromMainGraph(set, get);
+  }, CLUSTER_DEBOUNCE_MS);
+}
+
 const useUiStore = create<UiState & GraphState>((set, get) => ({
   activePanel: "source",
   setActivePanel: (panel) => set({ activePanel: panel }),
@@ -269,6 +302,7 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
   setSandboxMode: (on) => set({ sandboxMode: on }),
   clearSandbox: () => set({ sandboxGraph: { nodes: [], edges: [] } }),
   mergeSandboxIntoMain: () => {
+    flushClusterDebounce();
     const st = get();
     if (!st.mainGraph) {
       // If no main graph loaded yet, promote sandbox to main.
@@ -319,6 +353,7 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
   },
   newMarkedNodeIds: {},
   loadMainGraph: (graph, opts) => {
+    flushClusterDebounce();
     const st = get();
     const normalized: MindmapJson = normalizeMindmapJsonNodeTypes({
       nodes: graph.nodes.map((n) => ({ ...n, status: n.status ?? "firm" })),
@@ -358,13 +393,11 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       const nodes =
         idx >= 0 ? cur.nodes.map((n, i) => (i === idx ? { ...n, ...normalized } : n)) : [...cur.nodes, normalized];
       const next = { ...cur, nodes };
-      const clusterByNodeId = computeClusters(next);
       set({
         mainGraph: next,
-        clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
         newMarkedNodeIds: { [normalized.id]: true }
       });
+      scheduleDebouncedClustersFromMain(set, get);
     } else {
       const cur = st.sandboxGraph;
       const idx = cur.nodes.findIndex((n) => n.id === node.id);
@@ -385,13 +418,11 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
         ? cur.edges
         : [...cur.edges, { ...edge, status: edge.status ?? status }];
       const next = { ...cur, edges };
-      const clusterByNodeId = computeClusters(next);
       set({
         mainGraph: next,
-        clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
         newMarkedNodeIds: { [edge.source]: true, [edge.target]: true }
       });
+      scheduleDebouncedClustersFromMain(set, get);
     } else {
       const cur = st.sandboxGraph;
       const edges = cur.edges.some((e) => `${e.source}→${e.target}::${e.label ?? ""}` === key)
@@ -412,13 +443,11 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       const nodes = cur.nodes.filter((n) => n.id !== nodeId);
       const edges = cur.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
       const next = { ...cur, nodes, edges };
-      const clusterByNodeId = computeClusters(next);
       set({
         mainGraph: next,
-        clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
         newMarkedNodeIds: {}
       });
+      scheduleDebouncedClustersFromMain(set, get);
     } else {
       const cur = st.sandboxGraph;
       set({
@@ -439,13 +468,11 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       const cur = st.mainGraph ?? { nodes: [], edges: [] };
       const edges = cur.edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key);
       const next = { ...cur, edges };
-      const clusterByNodeId = computeClusters(next);
       set({
         mainGraph: next,
-        clusterByNodeId,
-        clusterAssignments: computeAssignments(clusterByNodeId, st.numAgents),
         newMarkedNodeIds: { [source]: true, [target]: true }
       });
+      scheduleDebouncedClustersFromMain(set, get);
     } else {
       const cur = st.sandboxGraph;
       set({
@@ -464,11 +491,15 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
   clusterAssignments: {},
   numAgents: 3,
   setNumAgents: (n) => {
+    flushClusterDebounce();
     const st = get();
     const numAgents = Math.max(1, Math.floor(n || 1));
+    const main = st.mainGraph ?? { nodes: [], edges: [] };
+    const clusterByNodeId = computeClusters(main);
     set({
       numAgents,
-      clusterAssignments: computeAssignments(st.clusterByNodeId, numAgents)
+      clusterByNodeId,
+      clusterAssignments: computeAssignments(clusterByNodeId, numAgents)
     });
   }
 }));

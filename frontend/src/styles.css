@@ -14,6 +14,16 @@ body {
 @layer base {
   :root {
     color-scheme: light;
+    /* X6 mindmap canvas + edges — SVG resolves these when html.dark toggles (no JS edge relabel). */
+    --mm-canvas-bg: #f8fafc;
+    --mm-edge-line-firm: #0f172a;
+    --mm-edge-line-draft: #94a3b8;
+    /** Firm edges while interactively connecting (preview). */
+    --mm-edge-line-interactive-firm: #2563eb;
+    --mm-edge-label-text-firm: #0f172a;
+    --mm-edge-label-text-draft: #64748b;
+    --mm-edge-label-pill-fill: #ffffff;
+    --mm-edge-label-pill-stroke: #e2e8f0;
   }
 
   body {
@@ -37,6 +47,14 @@ body {
 
   html.dark {
     color-scheme: dark;
+    --mm-canvas-bg: #0b1220;
+    --mm-edge-line-firm: #e2e8f0;
+    --mm-edge-line-draft: #64748b;
+    --mm-edge-line-interactive-firm: #93c5fd;
+    --mm-edge-label-text-firm: #f8fafc;
+    --mm-edge-label-text-draft: #64748b;
+    --mm-edge-label-pill-fill: #334155;
+    --mm-edge-label-pill-stroke: #64748b;
   }
 
   html.dark body {

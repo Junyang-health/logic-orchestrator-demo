@@ -9,6 +9,7 @@ import MindmapReactNode from "./MindmapReactNode";
 import type { MindmapJson } from "../types/mindmap";
 import { combineGraphs } from "../lib/graphBranch";
 import { normalizeMindmapNodeType } from "../lib/normalizeMindmapNodeType";
+import { applyReviewCommentBadgesToGraph } from "../lib/syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
 
 /** Dagre LR layout with generous gaps; call after node sizes are accurate to avoid overlap. */
@@ -51,6 +52,20 @@ function applyDagreLayout(graph: Graph) {
   graph.centerContent();
 }
 
+/** Directed children map: parent id → child ids (one pass over edges). */
+function buildOutgoingChildrenBySource(graph: Graph): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const edge of graph.getEdges()) {
+    const s = edge.getSourceCellId();
+    const t = edge.getTargetCellId();
+    if (!s || !t) continue;
+    const list = map.get(s);
+    if (list) list.push(t);
+    else map.set(s, [t]);
+  }
+  return map;
+}
+
 /** Dim everything except the selected node and its downstream subtree (parent→child edges). */
 function applySubtreeSelectionHighlight(graph: Graph, selectedNodeId: string | null) {
   const rm = (cell: any, cls: string) => {
@@ -85,14 +100,14 @@ function applySubtreeSelectionHighlight(graph: Graph, selectedNodeId: string | n
   const node = graph.getCellById(selectedNodeId);
   if (!node || !node.isNode()) return;
 
+  const childrenBySource = buildOutgoingChildrenBySource(graph);
   const subtreeIds = new Set<string>([selectedNodeId]);
   const queue = [selectedNodeId];
-  while (queue.length) {
-    const cur = queue.shift()!;
-    for (const edge of graph.getEdges()) {
-      const s = edge.getSourceCellId();
-      const t = edge.getTargetCellId();
-      if (s === cur && t && !subtreeIds.has(t)) {
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++]!;
+    for (const t of childrenBySource.get(cur) ?? []) {
+      if (!subtreeIds.has(t)) {
         subtreeIds.add(t);
         queue.push(t);
       }
@@ -127,8 +142,6 @@ export default function X6Canvas(props: {
   clusterByNodeId: Record<string, string>;
   clusterAssignments: Record<string, string>;
   onGraphReady?: (graph: Graph | null) => void;
-  /** When side docks open/close or assistant width changes, graph must resize (flex reflow is not always observed reliably). */
-  dockLayoutKey?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<Graph | null>(null);
@@ -144,6 +157,8 @@ export default function X6Canvas(props: {
   clusterAssignmentsRef.current = props.clusterAssignments;
   const agentIdRef = useRef(props.agentId);
   agentIdRef.current = props.agentId;
+  /** Skip `/validate` scheduling while bulk-updating ephemeral review badge counts on `node.data`. */
+  const reviewBadgeMuteValidationRef = useRef(false);
   const loadMindmapTimersRef = useRef<number[]>([]);
   const clearLoadMindmapTimers = () => {
     for (const t of loadMindmapTimersRef.current) window.clearTimeout(t);
@@ -152,6 +167,11 @@ export default function X6Canvas(props: {
   const sandboxMode = useUiStore((s) => s.sandboxMode);
   const selectedNodeId = useUiStore((s) => s.selectedNode?.id ?? null);
   const theme = useUiStore((s) => s.theme);
+  const reviewComments = useUiStore((s) => s.reviewComments);
+  const rightDockOpen = useUiStore((s) => s.rightDockOpen);
+  const assistantDockOpen = useUiStore((s) => s.assistantDockOpen);
+  const assistantDockWidthPx = useUiStore((s) => s.assistantDockWidthPx);
+  const dockLayoutKey = `${rightDockOpen ? 1 : 0}|${assistantDockOpen ? 1 : 0}|${assistantDockWidthPx}`;
 
   const reactShapeRegistered = useMemo(() => {
     // Register once per module instance.
@@ -199,20 +219,19 @@ export default function X6Canvas(props: {
       if (seenEdgeKeys.has(ek)) continue;
       seenEdgeKeys.add(ek);
       const isDraft = (e.status ?? "firm") === "draft";
-      const isDark = theme === "dark";
-      const stroke = isDraft ? (isDark ? "#64748b" : "#94a3b8") : isDark ? "#e2e8f0" : "#0f172a";
+      const stroke = isDraft ? "var(--mm-edge-line-draft)" : "var(--mm-edge-line-firm)";
       const labelBlock = e.label
         ? [
             {
               attrs: {
                 text: {
                   text: e.label,
-                  fill: isDark ? "#f8fafc" : isDraft ? "#64748b" : "#0f172a",
+                  fill: isDraft ? "var(--mm-edge-label-text-draft)" : "var(--mm-edge-label-text-firm)",
                   fontSize: 11
                 },
                 rect: {
-                  fill: isDark ? "#334155" : "#ffffff",
-                  stroke: isDark ? "#64748b" : "#e2e8f0",
+                  fill: "var(--mm-edge-label-pill-fill)",
+                  stroke: "var(--mm-edge-label-pill-stroke)",
                   strokeWidth: 1
                 }
               }
@@ -232,6 +251,10 @@ export default function X6Canvas(props: {
         }
       });
     }
+
+    applyReviewCommentBadgesToGraph(graph, useUiStore.getState().reviewComments, {
+      muteValidationRef: reviewBadgeMuteValidationRef
+    });
 
     const relayoutIfCurrent = () => {
       if (layoutEpoch !== layoutEpochRef.current) return;
@@ -255,8 +278,8 @@ export default function X6Canvas(props: {
     // Ensure registration happened.
     void reactShapeRegistered;
 
-    const applyGraphTheme = (g: Graph, theme: "light" | "dark") => {
-      const bg = theme === "dark" ? "#0b1220" : "#f8fafc";
+    const applyGraphTheme = (g: Graph) => {
+      const bg = "var(--mm-canvas-bg)";
       try {
         (g as any).drawBackground?.({ color: bg });
       } catch {
@@ -273,7 +296,7 @@ export default function X6Canvas(props: {
       container: el,
       grid: true,
       background: {
-        color: theme === "dark" ? "#0b1220" : "#f8fafc"
+        color: "var(--mm-canvas-bg)"
       },
       panning: {
         enabled: true,
@@ -291,17 +314,10 @@ export default function X6Canvas(props: {
         router: "manhattan",
         createEdge() {
           const isSandbox = Boolean((this as any).prop?.("sandboxContext"));
-          const uiTheme = ((this as any).prop?.("uiTheme") as "light" | "dark" | undefined) || "light";
           return (this as any).createEdge({
             attrs: {
               line: {
-                stroke: isSandbox
-                  ? uiTheme === "dark"
-                    ? "#64748b"
-                    : "#94a3b8"
-                  : uiTheme === "dark"
-                    ? "#93c5fd"
-                    : "#2563eb",
+                stroke: isSandbox ? "var(--mm-edge-line-draft)" : "var(--mm-edge-line-interactive-firm)",
                 strokeWidth: 1.5,
                 strokeDasharray: isSandbox ? "6 4" : ""
               }
@@ -318,8 +334,7 @@ export default function X6Canvas(props: {
 
     // Bridge sandbox mode into graph context for X6 internals.
     (graph as any).prop?.("sandboxContext", sandboxMode);
-    (graph as any).prop?.("uiTheme", theme);
-    applyGraphTheme(graph, theme);
+    applyGraphTheme(graph);
 
     const scheduleDagreFromNodeSize = () => {
       const g = graphRef.current;
@@ -503,6 +518,7 @@ export default function X6Canvas(props: {
       scheduleValidate(node.id);
     });
     graph.on("node:change:data", ({ node }) => {
+      if (reviewBadgeMuteValidationRef.current) return;
       scheduleValidate(node.id);
     });
 
@@ -705,7 +721,12 @@ export default function X6Canvas(props: {
   }, []);
 
   useEffect(() => {
-    if (props.dockLayoutKey === undefined) return;
+    applyReviewCommentBadgesToGraph(graphRef.current, reviewComments, {
+      muteValidationRef: reviewBadgeMuteValidationRef
+    });
+  }, [reviewComments]);
+
+  useEffect(() => {
     const el = containerRef.current;
     const g = graphRef.current;
     if (!el || !g) return;
@@ -726,7 +747,7 @@ export default function X6Canvas(props: {
       cancelAnimationFrame(t1);
       cancelAnimationFrame(t2);
     };
-  }, [props.dockLayoutKey]);
+  }, [dockLayoutKey]);
 
   useEffect(() => {
     const g = graphRef.current;
@@ -737,8 +758,8 @@ export default function X6Canvas(props: {
   useEffect(() => {
     const g = graphRef.current;
     if (!g) return;
-    (g as any).prop?.("uiTheme", theme);
-    const bg = theme === "dark" ? "#0b1220" : "#f8fafc";
+    /** Canvas chrome only — edge strokes/labels use `var(--mm-edge-*)` so they track `html.dark` without O(edges) work. */
+    const bg = "var(--mm-canvas-bg)";
     try {
       (g as any).drawBackground?.({ color: bg });
     } catch {
@@ -748,49 +769,6 @@ export default function X6Canvas(props: {
       (g as any).container?.style && ((g as any).container.style.background = bg);
     } catch {
       // ignore
-    }
-    // Restyle existing edges + label pills for theme.
-    const isDark = theme === "dark";
-    for (const e of g.getEdges()) {
-      const d = ((e as any).getData?.() ?? {}) as any;
-      const status = (d.status ?? "firm") as string;
-      const isDraft = status === "draft";
-      const stroke = isDraft ? (isDark ? "#64748b" : "#94a3b8") : isDark ? "#e2e8f0" : "#0f172a";
-      try {
-        e.attr("line/stroke", stroke);
-      } catch {
-        // ignore
-      }
-      try {
-        const labels = (e as any).getLabels?.() || [];
-        if (labels?.length) {
-          (e as any).setLabels?.(
-            labels.map((lab: any) => {
-              const a = lab?.attrs ?? {};
-              const textStr = String(a.text?.text ?? a.label?.text ?? "").trim();
-              return {
-                ...lab,
-                attrs: {
-                  text: {
-                    ...(a.text ?? {}),
-                    text: textStr,
-                    fill: isDark ? "#f8fafc" : isDraft ? "#64748b" : "#0f172a",
-                    fontSize: a.text?.fontSize ?? a.label?.fontSize ?? 11
-                  },
-                  rect: {
-                    ...(a.rect ?? {}),
-                    fill: isDark ? "#334155" : "#ffffff",
-                    stroke: isDark ? "#64748b" : "#e2e8f0",
-                    strokeWidth: 1
-                  }
-                }
-              };
-            })
-          );
-        }
-      } catch {
-        // ignore
-      }
     }
   }, [theme]);
 
