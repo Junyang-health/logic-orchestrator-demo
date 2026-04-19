@@ -8,6 +8,9 @@ import type { MindmapJson } from "../types/mindmap";
 type Project = { id: string; name: string };
 type StoredFile = { id: string; filename: string; size: number; content_type?: string | null; uploaded_at_ms: number };
 
+/** Minimum characters in intent / goal for a starter mindmap with no source files (matches backend). */
+const MIN_INTENT_BOOTSTRAP = 12;
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -49,6 +52,13 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     () => combineGraphs(mainGraph, sandboxGraph).nodes.length > 0,
     [mainGraph, sandboxGraph]
   );
+
+  const trimmedIntent = intent.trim();
+  const canGenerateFromStoredSelection =
+    Boolean(projectId) && storedFiles.length > 0 && selectedStoredIds.length > 0;
+  const canBootstrapFromIntent = trimmedIntent.length >= MIN_INTENT_BOOTSTRAP && sourceFiles.length === 0;
+  const canGenerateMindmap =
+    sourceFiles.length > 0 || canGenerateFromStoredSelection || canBootstrapFromIntent;
 
   const pickFiles = useCallback(
     (list: FileList | File[]) => {
@@ -209,12 +219,8 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
 
   const buildMindmap = useCallback(async () => {
     if (sourceFiles.length === 0) {
-      // If no local files are queued, fall back to generating from selected stored project files.
-      if (projectId && storedFiles.length > 0) {
-        if (selectedStoredIds.length === 0) {
-          setError("Select at least one stored file (checkboxes above) to include in the mindmap.");
-          return;
-        }
+      // Prefer generating from explicitly selected stored project files when available.
+      if (canGenerateFromStoredSelection) {
         setBusy(true);
         setError("");
         try {
@@ -247,7 +253,69 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         }
       }
 
-      setError("Add at least one file (or select a project with stored files).");
+      // No queued files and no stored selection: starter mindmap from intent only (no source material).
+      if (trimmedIntent.length >= MIN_INTENT_BOOTSTRAP) {
+        setBusy(true);
+        setError("");
+        try {
+          if (projectId) {
+            const url = `${props.backendBase}/projects/${encodeURIComponent(projectId)}/mindmap`;
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                intent: trimmedIntent,
+                bootstrap_without_sources: true
+              })
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              const d = (err as { detail?: unknown }).detail;
+              setError(
+                typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Generate failed (${res.status})`
+              );
+              return;
+            }
+            const payload = (await res.json()) as { mindmap?: MindmapJson };
+            const json = (payload?.mindmap ?? payload) as MindmapJson;
+            loadMainGraph(json);
+            return;
+          }
+          const res = await fetch(`${props.backendBase}/mindmap/from-intent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intent: trimmedIntent })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            const d = (err as { detail?: unknown }).detail;
+            setError(
+              typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Generate failed (${res.status})`
+            );
+            return;
+          }
+          const payload = (await res.json()) as { mindmap?: MindmapJson };
+          const json = (payload?.mindmap ?? payload) as MindmapJson;
+          loadMainGraph(json);
+          return;
+        } catch {
+          setError("Network error — is the backend running?");
+          return;
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      if (projectId && storedFiles.length > 0 && selectedStoredIds.length === 0) {
+        setError(
+          "Select at least one stored file to include, or write a longer intent / goal (12+ characters) for a starter mindmap without files."
+        );
+        return;
+      }
+
+      setError(
+        `Add at least one file, or describe your intent / goal in at least ${MIN_INTENT_BOOTSTRAP} characters to generate a starter mindmap without source material.`
+      );
       return;
     }
     setBusy(true);
@@ -291,7 +359,9 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     refreshStoredFiles,
     storedFiles,
     intent,
-    selectedStoredIds
+    selectedStoredIds,
+    canGenerateFromStoredSelection,
+    trimmedIntent
   ]);
 
   return (
@@ -300,8 +370,9 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         <div>
           <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Source material</div>
           <p className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-slate-300">
-            Upload PDFs, Word/Excel, or images. Some file types may be summarized only as placeholders. Then generate
-            a mindmap from the combined content.
+            Upload PDFs, Word/Excel, or images. Some file types may be summarized only as placeholders. With no files,
+            you can still generate a starter mindmap from your intent / goal ({MIN_INTENT_BOOTSTRAP}+ characters) using
+            the model&apos;s general knowledge (clearly exploratory, not tied to documents).
           </p>
         </div>
         <Upload className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
@@ -413,7 +484,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       ) : null}
 
       <label className="mt-3 block text-[11px] text-slate-700 dark:text-slate-200">
-        Intent / goal (guides the mindmap)
+        Intent / goal (guides the mindmap; {MIN_INTENT_BOOTSTRAP}+ chars enables file-free starter map)
         <textarea
           className="mt-1 ios-input resize-y"
           rows={3}
@@ -611,15 +682,19 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
 
       <button
         type="button"
-        disabled={
-          busy ||
-          (sourceFiles.length === 0 &&
-            !(projectId && storedFiles.length > 0 && selectedStoredIds.length > 0))
-        }
+        disabled={busy || !canGenerateMindmap}
         className="mt-3 w-full ios-button-primary disabled:cursor-not-allowed"
         onClick={() => buildMindmap()}
       >
-        {busy ? "Generating mindmap…" : sourceFiles.length > 0 ? "Generate mindmap from queued files" : "Generate mindmap from stored project"}
+        {busy
+          ? "Generating mindmap…"
+          : sourceFiles.length > 0
+            ? "Generate mindmap from queued files"
+            : canGenerateFromStoredSelection
+              ? "Generate mindmap from stored project"
+              : canBootstrapFromIntent
+                ? "Generate starter mindmap (intent only)"
+                : "Generate mindmap"}
       </button>
 
       {error ? <p className="mt-2 text-[11px] text-red-700 dark:text-red-300">{error}</p> : null}

@@ -5,7 +5,7 @@ from typing import Optional, Sequence
 
 from app.services.excel_summary import summarize_excel
 from app.services.image_summary import summarize_image_with_claude
-from app.services.mindmap_service import EvidenceItem, generate_mindmap_json
+from app.services.mindmap_service import EvidenceItem, generate_mindmap_json, generate_mindmap_json_intent_only
 
 
 @dataclass(frozen=True)
@@ -106,4 +106,12 @@ def build_mindmap_from_files(*, llm, files: Sequence[InputFile], intent: Optiona
         summaries.append(f"File: {name}\nUnsupported file type for summarization (content-type: {ct}).")
 
     return generate_mindmap_json(claude=llm, summaries=summaries, evidence=evidence)
+
+
+def build_mindmap_from_intent_only(*, llm, intent: str):
+    """Starter mindmap when the user has no source files (model uses general knowledge + stated goal)."""
+    intent_txt = (intent or "").strip()
+    if len(intent_txt) < 12:
+        raise ValueError("Intent must be at least 12 characters")
+    return generate_mindmap_json_intent_only(claude=llm, intent=intent_txt)
 

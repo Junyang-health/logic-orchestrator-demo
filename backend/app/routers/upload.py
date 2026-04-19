@@ -3,12 +3,33 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from app.services.llm_client import LlmClient
 from app.services import project_storage
-from app.services.mindmap_builder import InputFile, build_mindmap_from_files
+from app.services.mindmap_builder import InputFile, build_mindmap_from_files, build_mindmap_from_intent_only
 
 router = APIRouter()
+
+
+class IntentOnlyMindmapBody(BaseModel):
+    intent: str = Field(..., min_length=1)
+
+
+@router.post("/mindmap/from-intent")
+def mindmap_from_intent(body: IntentOnlyMindmapBody):
+    """Generate a starter mindmap from goal text only (no uploads or project files)."""
+    txt = body.intent.strip()
+    if len(txt) < 12:
+        raise HTTPException(status_code=400, detail="intent must be at least 12 characters")
+    llm = LlmClient()
+    try:
+        mindmap = build_mindmap_from_intent_only(llm=llm, intent=txt)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate mindmap JSON: {e}")
+    return {"mindmap": mindmap}
 
 
 @router.post("/upload")
@@ -61,6 +82,7 @@ async def mindmap(files: List[UploadFile] = File(...)):
 @router.get("/mindmap")
 def mindmap_help():
     return {
-        "detail": "Use POST /mindmap (or POST /upload) with multipart/form-data field 'files' to generate a mindmap."
+        "detail": "Use POST /mindmap (or POST /upload) with multipart/form-data field 'files' to generate a mindmap.",
+        "intent_only": "POST /mindmap/from-intent with JSON {\"intent\": \"...\"} (min 12 chars) for a starter map without files.",
     }
 

@@ -326,3 +326,91 @@ def generate_mindmap_json(*, claude, summaries: list[str], evidence: list[Eviden
     json.dumps(data)
     return data  # type: ignore[return-value]
 
+
+def _coerce_evidence_to_inferred_intent_only(data: dict[str, Any]) -> None:
+    """When no documents exist, Evidence nodes would be fabricated — normalize to Inferred."""
+    raw_nodes = data.get("nodes")
+    if not isinstance(raw_nodes, list):
+        return
+    for node in raw_nodes:
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("type") or "").strip() != "Evidence":
+            continue
+        node["type"] = "Inferred"
+        md = node.get("metadata")
+        if isinstance(md, dict):
+            for k in ("source_filename", "text_snippet", "page_number"):
+                md.pop(k, None)
+
+
+def generate_mindmap_json_intent_only(*, claude, intent: str) -> MindmapJson:
+    intent_txt = (intent or "").strip()
+    if len(intent_txt) < 12:
+        raise ValueError("Intent must be at least 12 characters")
+    summaries = [
+        f"USER GOAL / TOPIC:\n{intent_txt}",
+        (
+            "There are **no uploaded documents**. Build an exploratory starter mindmap from general knowledge "
+            "and the goal above. Prefer hypotheses and open questions where facts are uncertain."
+        ),
+    ]
+    evidence: list[EvidenceItem] = []
+    user_prompt = (
+        build_mindmap_prompt(summaries=summaries, evidence=evidence)
+        + "\n\n*** NO SOURCE DOCUMENTS ***\n"
+        "- Output **only** type \"Inferred\" nodes (zero \"Evidence\" nodes).\n"
+        "- Do **not** invent filenames, page numbers, or quoted excerpts from imaginary documents.\n"
+        "- Do **not** invent specific statistics, dates, or compliance claims; when unsure, phrase nodes as questions or hypotheses.\n"
+    )
+    data = claude.generate_json(system=SYSTEM_PROMPT, user=user_prompt)
+
+    if not isinstance(data, dict):
+        raise ValueError("Claude response was not a JSON object")
+    if "nodes" not in data or "edges" not in data:
+        raise ValueError("Claude response missing nodes/edges")
+    if not isinstance(data["nodes"], list) or not isinstance(data["edges"], list):
+        raise ValueError("Claude response nodes/edges wrong types")
+
+    fallback = evidence[0] if evidence else None
+    for node in data["nodes"]:
+        if not isinstance(node, dict):
+            continue
+        t = str(node.get("type") or "").strip()
+        tl = t.lower()
+        if tl == "evidence":
+            node["type"] = "Evidence"
+        elif tl in ("inferred", "inference", "insight", "topic", "action", "root"):
+            node["type"] = "Inferred"
+        else:
+            node["type"] = "Inferred"
+
+        md = node.get("metadata")
+        if not isinstance(md, dict):
+            node["metadata"] = md = {}
+
+        if node.get("type") == "Evidence":
+            src = str(md.get("source_filename", "") or "").strip()
+            snip = str(md.get("text_snippet", "") or "").strip()
+            page = md.get("page_number")
+            if (not src or not snip) and fallback:
+                src = src or fallback.filename
+                snip = snip or fallback.snippet
+                if page in ("", None) and fallback.page_number:
+                    page = fallback.page_number
+            md["source_filename"] = src
+            md["text_snippet"] = _truncate(snip, 240)
+            if isinstance(page, int) and page > 0:
+                md["page_number"] = page
+            if md.get("is_root"):
+                del md["is_root"]
+
+        _normalize_critical_values(md)
+
+    _coerce_evidence_to_inferred_intent_only(data)
+
+    _ensure_mindmap_root(data=data, summaries=summaries)
+
+    json.dumps(data)
+    return data  # type: ignore[return-value]
+

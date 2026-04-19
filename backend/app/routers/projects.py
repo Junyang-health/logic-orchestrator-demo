@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.services import project_storage
 from app.services.llm_client import LlmClient
-from app.services.mindmap_builder import InputFile, build_mindmap_from_files
+from app.services.mindmap_builder import InputFile, build_mindmap_from_files, build_mindmap_from_intent_only
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -38,6 +38,7 @@ class BuildMindmapFromProjectBody(BaseModel):
 
     intent: Optional[str] = None
     file_ids: Optional[list[str]] = None
+    bootstrap_without_sources: bool = False
 
 
 class SavedMindmapCanvasBody(BaseModel):
@@ -139,6 +140,25 @@ def build_mindmap_from_project(
 ):
     # Generate mindmap from stored files; body.file_ids (when provided) restricts which files are used.
     eff_intent = _strip_opt(body.intent if body else None) or _strip_opt(intent)
+    bootstrap = bool(body and body.bootstrap_without_sources)
+
+    if not project_storage.project_exists(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if bootstrap:
+        if not eff_intent or len(eff_intent) < 12:
+            raise HTTPException(
+                status_code=400,
+                detail="intent must be at least 12 characters to generate a starter mindmap without sources",
+            )
+        llm = LlmClient()
+        try:
+            mindmap = build_mindmap_from_intent_only(llm=llm, intent=eff_intent)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate mindmap JSON: {e}")
+        return {"project_id": project_id, "mindmap": mindmap}
 
     all_meta = project_storage.list_files(project_id)
     if not all_meta:
