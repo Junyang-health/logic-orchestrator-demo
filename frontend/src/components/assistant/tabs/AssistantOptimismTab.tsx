@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useI18n } from "../../../i18n/useI18n";
 import {
   formatMoneyShort,
   snapDeltaPct,
@@ -44,26 +45,20 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
     onApplyOptimism
   } = props;
 
+  const { t } = useI18n();
+
   return (
     <div className="mb-3 ios-card p-3">
-      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Optimism meter</div>
-      <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-        Select a branch node whose subtree includes <span className="font-medium">TAM</span>,{" "}
-        <span className="font-medium">SOM</span> (or SAM), or <span className="font-medium">ARR</span> in{" "}
-        <span className="font-medium">critical values</span>. Baseline numbers load from that branch; adjust −100% to +100%
-        in 10% steps, review recomputed figures and impacted nodes, then apply.
-      </p>
+      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("opt_title")}</div>
+      <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">{t("opt_intro")}</p>
       {optimismMetricsAvailable.length === 0 ? (
         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-[10px] text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-          No TAM / SOM / ARR figures detected in this branch. Add them as{" "}
-          <code className="font-mono">critical_values</code> on a node, or put a keyword + amount in a node label (e.g.{" "}
-          <span className="italic">市场规模 50亿美元</span>, <span className="italic">TAM: $1.2B</span>,{" "}
-          <span className="italic">ARR 8000万</span>) under the selected root, then switch away and back to Optimism.
+          {t("opt_no_figures")}
         </p>
       ) : (
         <>
           <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Branch baseline (ground zero)
+            {t("opt_branch_baseline")}
           </div>
           <ul className="mt-1 space-y-0.5 text-[10px] text-slate-700 dark:text-slate-200">
             {(["TAM", "SOM", "ARR"] as const).map((k) => {
@@ -73,7 +68,7 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
               return (
                 <li key={k}>
                   <span className="font-mono">{k}</span>: {formatMoneyShort(v, currency)}
-                  {sid ? <span className="text-slate-500 dark:text-slate-400"> · node {sid}</span> : null}
+                  {sid ? <span className="text-slate-500 dark:text-slate-400"> {t("opt_node", { id: sid })}</span> : null}
                 </li>
               );
             })}
@@ -83,7 +78,7 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
             branchFinancial?.customersTotal != null ||
             branchFinancial?.penetrationPct != null) && (
             <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">
-              Drivers detected:{" "}
+              {t("opt_drivers")}{" "}
               {[
                 branchFinancial?.targetSegmentPct != null ? `segment ${branchFinancial.targetSegmentPct}%` : null,
                 branchFinancial?.penetrationPct != null ? `penetration ${branchFinancial.penetrationPct}%` : null,
@@ -95,11 +90,11 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
             </p>
           )}
           <label className="mt-2 block text-[11px] text-slate-700 dark:text-slate-200">
-            Currency (display)
+            {t("opt_currency")}
             <input className="mt-1 ios-input py-1.5" value={currency} onChange={(e) => setCurrency(e.target.value)} />
           </label>
           <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Stress metric
+            {t("opt_stress")}
           </div>
           <div className="mt-1 flex flex-wrap gap-1">
             {(["TAM", "SOM", "ARR"] as const).map((k) => {
@@ -125,7 +120,7 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
             })}
           </div>
           <label className="mt-2 block text-[11px] text-slate-700 dark:text-slate-200">
-            Optimism vs baseline: <span className="font-mono">{snapDeltaPct(optimismDeltaPct)}%</span>
+            <span className="font-mono">{t("opt_optimism", { p: snapDeltaPct(optimismDeltaPct) })}</span>
             <input
               type="range"
               min={-100}
@@ -152,21 +147,21 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
               className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               onClick={() => setOptimismDeltaPct(0)}
             >
-              Reset 0%
+              {t("opt_reset")}
             </button>
           </div>
           {optimismPreview ? (
             <div className="mt-3 rounded-lg border border-slate-200 bg-white/90 p-2 dark:border-slate-600 dark:bg-slate-950/80">
               <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Recomputed (vs baseline)
+                {t("opt_recomputed")}
               </div>
               <table className="mt-1 w-full border-collapse text-[10px]">
                 <thead>
                   <tr className="text-left text-slate-500 dark:text-slate-400">
-                    <th className="py-0.5 pr-2">Metric</th>
-                    <th className="py-0.5 pr-2">Before</th>
-                    <th className="py-0.5 pr-2">After</th>
-                    <th className="py-0.5">Δ%</th>
+                    <th className="py-0.5 pr-2">{t("opt_metric")}</th>
+                    <th className="py-0.5 pr-2">{t("opt_before")}</th>
+                    <th className="py-0.5 pr-2">{t("opt_after")}</th>
+                    <th className="py-0.5">{t("opt_delta")}</th>
                   </tr>
                 </thead>
                 <tbody className="text-slate-800 dark:text-slate-100">
@@ -189,7 +184,7 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
           {optimismAffected.length > 0 ? (
             <div className="mt-2">
               <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Branch nodes to review ({optimismAffected.length})
+                {t("opt_review", { n: optimismAffected.length })}
               </div>
               <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto text-[9px] text-slate-600 dark:text-slate-300">
                 {optimismAffected.map((a) => (
@@ -203,9 +198,7 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
               </ul>
             </div>
           ) : (
-            <p className="mt-2 text-[9px] text-slate-500 dark:text-slate-400">
-              No other branch nodes auto-flagged; downstream metrics still update in the table above.
-            </p>
+            <p className="mt-2 text-[9px] text-slate-500 dark:text-slate-400">{t("opt_no_flagged")}</p>
           )}
           <button
             type="button"
@@ -213,7 +206,7 @@ function AssistantOptimismTabInner(props: AssistantOptimismTabProps) {
             disabled={simBusy || !optimismFocus || optimismMetricsAvailable.length === 0}
             onClick={() => void onApplyOptimism()}
           >
-            {simBusy ? "Applying…" : "Apply optimism to mindmap"}
+            {simBusy ? t("footer_applying") : t("opt_apply")}
           </button>
         </>
       )}

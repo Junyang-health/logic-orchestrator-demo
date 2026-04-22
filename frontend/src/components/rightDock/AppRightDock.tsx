@@ -2,6 +2,7 @@ import type { Graph } from "@antv/x6";
 import { useEffect, useState } from "react";
 import useUiStore from "../../store/useUiStore";
 import RightDockNav from "./RightDockNav";
+import ExportSidebarPanel from "./ExportSidebarPanel";
 import ReviewSidebarPanel from "./ReviewSidebarPanel";
 import SourceSidebarPanel from "./SourceSidebarPanel";
 
@@ -28,7 +29,7 @@ export default function AppRightDock(props: { graph: Graph | null; backendBase: 
         <div className="flex-1 overflow-auto px-4 py-4">
           {activePanel === "source" ? (
             <SourceSidebarPanel graph={props.graph} backendBase={props.backendBase} />
-          ) : (
+          ) : activePanel === "review" ? (
             <ReviewSidebarPanel
               backendBase={props.backendBase}
               selectedCommentIds={selectedCommentIds}
@@ -38,6 +39,8 @@ export default function AppRightDock(props: { graph: Graph | null; backendBase: 
               applyReviewError={applyReviewError}
               setApplyReviewError={setApplyReviewError}
             />
+          ) : (
+            <ExportSidebarPanel graph={props.graph} backendBase={props.backendBase} />
           )}
         </div>
       </div>

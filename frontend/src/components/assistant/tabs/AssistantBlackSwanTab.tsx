@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useI18n } from "../../../i18n/useI18n";
 import { bsMitKey, type BlackSwanRunBundle, type BlackSwanScenario } from "../assistantTypes";
 
 export type AssistantBlackSwanTabProps = {
@@ -30,15 +31,14 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
     onApply
   } = props;
 
+  const { t } = useI18n();
+
   return (
     <div className="mb-3 ios-card p-3">
-      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Black Swan simulation</div>
-      <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-        Select a branch node on the canvas, scan for five MECE-scoped tail-risk scenarios, run stress analysis on your picks,
-        then apply chosen mitigations to the mindmap.
-      </p>
+      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("bs_title")}</div>
+      <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">{t("bs_intro")}</p>
       {!selectedNodeId ? (
-        <p className="mt-2 text-[10px] text-amber-700 dark:text-amber-300">Select a node on the canvas to anchor this simulation.</p>
+        <p className="mt-2 text-[10px] text-amber-700 dark:text-amber-300">{t("bs_select")}</p>
       ) : null}
 
       <button
@@ -47,13 +47,13 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
         disabled={simBusy || !selectedNodeId}
         onClick={() => void onScan()}
       >
-        {simBusy && !bsScenarios ? "Scanning…" : "1. Scan — top 5 black swan scenarios (MECE)"}
+        {simBusy && !bsScenarios ? t("mece_scanning") : t("bs_scan")}
       </button>
 
       {bsScenarios && bsScenarios.length > 0 ? (
         <div className="mt-3 space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            2. Select scenario(s) to simulate
+            {t("bs_pick")}
           </div>
           <ul className="max-h-52 space-y-2 overflow-y-auto text-[10px]">
             {bsScenarios.map((s) => (
@@ -88,7 +88,7 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
             disabled={simBusy || bsSelectedScenarioIds.size < 1}
             onClick={() => void onRun()}
           >
-            {simBusy && bsScenarios ? "Running simulation…" : "3. Run simulation — impacts, gaps, mitigations"}
+            {simBusy && bsScenarios ? t("bs_run_busy") : t("bs_run")}
           </button>
         </div>
       ) : null}
@@ -97,12 +97,12 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
         <div className="mt-3 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-600">
           {bsRunBundle.executive_summary ? (
             <div className="rounded-md bg-slate-50 p-2 text-[10px] text-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
-              <span className="font-semibold">Summary</span>
+              <span className="font-semibold">{t("bs_summary")}</span>
               <p className="mt-1 whitespace-pre-wrap">{bsRunBundle.executive_summary}</p>
             </div>
           ) : null}
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            4. Review &amp; 5. Select mitigation(s) to add to the map
+            {t("bs_review_mit")}
           </div>
           <div className="max-h-64 space-y-3 overflow-y-auto">
             {bsRunBundle.results.map((block) => {
@@ -113,13 +113,13 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
                   className="rounded-lg border border-slate-200 bg-white/90 p-2 text-[10px] dark:border-slate-600 dark:bg-slate-900/80"
                 >
                   <div className="font-semibold text-slate-800 dark:text-slate-100">{scen?.title || block.scenario_id}</div>
-                  <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">Potential impacts</div>
+                  <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">{t("bs_impacts")}</div>
                   <ul className="list-inside list-disc text-slate-600 dark:text-slate-300">
                     {block.potential_impacts.map((t, i) => (
                       <li key={i}>{t}</li>
                     ))}
                   </ul>
-                  <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">Gaps to address</div>
+                  <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">{t("bs_gaps")}</div>
                   <ul className="space-y-0.5 text-slate-600 dark:text-slate-300">
                     {block.gaps_to_address.map((g) => (
                       <li key={g.id}>
@@ -127,7 +127,7 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">Mitigations</div>
+                  <div className="mt-1 text-[9px] font-semibold uppercase text-slate-500">{t("bs_mitigations")}</div>
                   <ul className="space-y-1">
                     {block.mitigations.map((m) => {
                       const k = bsMitKey(block.scenario_id, m.id);
@@ -144,7 +144,7 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
                               <span className="mt-0.5 block text-slate-600 dark:text-slate-300">{m.description}</span>
                               {m.addresses_gaps && m.addresses_gaps.length > 0 ? (
                                 <span className="mt-0.5 block text-[9px] text-slate-500">
-                                  Addresses gaps: {m.addresses_gaps.join(", ")}
+                                  {t("bs_gaps_addr")} {m.addresses_gaps.join(", ")}
                                 </span>
                               ) : null}
                             </span>
@@ -163,7 +163,7 @@ function AssistantBlackSwanTabInner(props: AssistantBlackSwanTabProps) {
             disabled={simBusy || bsMitigationPick.size < 1}
             onClick={() => void onApply()}
           >
-            {simBusy ? "Applying…" : "Apply selected mitigations to mindmap"}
+            {simBusy ? t("footer_applying") : t("bs_apply")}
           </button>
         </div>
       ) : null}

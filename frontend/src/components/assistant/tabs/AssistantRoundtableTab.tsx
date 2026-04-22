@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Trash2 } from "lucide-react";
+import { useI18n } from "../../../i18n/useI18n";
 import { REVIEW_PERSONAS } from "../../../types/review";
 import type { RoundtablePersona } from "../assistantTypes";
 
@@ -30,14 +31,15 @@ function AssistantRoundtableTabInner(props: AssistantRoundtableTabProps) {
     onAddCustom
   } = props;
 
+  const { t } = useI18n();
+
   return (
     <div className="mb-3 ios-card p-3">
-      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Roundtable</div>
-      <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-        Multi-persona discussion on the <span className="font-medium">selected node</span>. Run rounds, then summarize into concrete map
-        edits and apply after you confirm.
-      </p>
-      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Recommended personas</div>
+      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("rt_title")}</div>
+      <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">{t("rt_intro")}</p>
+      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {t("rt_recommended")}
+      </div>
       <div className="mt-1 flex flex-wrap gap-1">
         {REVIEW_PERSONAS.map((pn) => (
           <button
@@ -52,7 +54,9 @@ function AssistantRoundtableTabInner(props: AssistantRoundtableTabProps) {
       </div>
       {rtLib.length > 0 ? (
         <>
-          <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Saved custom personas</div>
+          <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            {t("rt_saved")}
+          </div>
           <div className="mt-1 flex flex-wrap gap-1">
             {rtLib.map((row) => (
               <button
@@ -68,10 +72,12 @@ function AssistantRoundtableTabInner(props: AssistantRoundtableTabProps) {
           </div>
         </>
       ) : null}
-      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Panel ({rtPersonas.length})</div>
+      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {t("rt_panel", { n: rtPersonas.length })}
+      </div>
       <div className="mt-1 flex flex-wrap gap-1">
         {rtPersonas.length === 0 ? (
-          <span className="text-[10px] text-slate-500 dark:text-slate-400">Add at least one persona.</span>
+          <span className="text-[10px] text-slate-500 dark:text-slate-400">{t("rt_add_one")}</span>
         ) : (
           rtPersonas.map((p) => (
             <span
@@ -82,7 +88,7 @@ function AssistantRoundtableTabInner(props: AssistantRoundtableTabProps) {
               <button
                 type="button"
                 className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 dark:hover:text-red-400"
-                aria-label={`Remove ${p.name}`}
+                aria-label={t("rt_remove", { name: p.name })}
                 onClick={() => onRemovePersona(p.id)}
               >
                 <Trash2 className="h-3 w-3" />
@@ -93,29 +99,29 @@ function AssistantRoundtableTabInner(props: AssistantRoundtableTabProps) {
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <label className="block text-[11px] text-slate-700 dark:text-slate-200">
-          Custom name
+          {t("rt_custom_name")}
           <input
             className="mt-1 ios-input py-1.5"
             value={rtNewName}
             onChange={(e) => setRtNewName(e.target.value)}
-            placeholder="e.g. Chief Medical Officer"
+            placeholder={t("rt_name_ph")}
           />
         </label>
         <label className="block text-[11px] text-slate-700 dark:text-slate-200 sm:col-span-2">
-          Custom instruction
+          {t("rt_custom_instr")}
           <textarea
             className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-800 dark:border-slate-600 dark:bg-slate-950/80 dark:text-slate-100"
             rows={2}
             value={rtNewInstruction}
             onChange={(e) => setRtNewInstruction(e.target.value)}
-            placeholder="Voice, expertise, and what they should optimize for in discussion…"
+            placeholder={t("rt_instr_ph")}
           />
         </label>
       </div>
       <button type="button" className="mt-2 w-full ios-button" onClick={() => onAddCustom()}>
-        Add custom persona to panel
+        {t("rt_add_panel")}
       </button>
-      <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">Custom personas are also saved locally for quick reuse (+ buttons above).</p>
+      <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">{t("rt_saved_local")}</p>
     </div>
   );
 }

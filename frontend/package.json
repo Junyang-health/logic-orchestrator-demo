@@ -12,6 +12,7 @@
   "dependencies": {
     "@antv/x6": "^2.13.0",
     "@antv/x6-plugin-dnd": "^2.1.1",
+    "@antv/x6-plugin-export": "^2.1.6",
     "@antv/x6-react-shape": "^2.2.3",
     "dagre": "^0.8.5",
     "lucide-react": "^0.469.0",

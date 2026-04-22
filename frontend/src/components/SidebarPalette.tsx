@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Graph, Node } from "@antv/x6";
 import { Dnd } from "@antv/x6-plugin-dnd";
+import { useI18n } from "../i18n/useI18n";
 import useUiStore from "../store/useUiStore";
 
 type PaletteItem = {
@@ -9,14 +10,18 @@ type PaletteItem = {
   type: string;
 };
 
-const PALETTE: PaletteItem[] = [
-  { id: "evidence", label: "Evidence", type: "evidence" },
-  { id: "inferred", label: "Inferred", type: "inferred" }
-];
-
 export default function SidebarPalette(props: { graph: Graph | null }) {
+  const { t, locale } = useI18n();
   const sandboxMode = useUiStore((s) => s.sandboxMode);
   const dndRef = useRef<Dnd | null>(null);
+
+  const PALETTE: PaletteItem[] = useMemo(
+    () => [
+      { id: "evidence", label: t("palette_evidence"), type: "evidence" },
+      { id: "inferred", label: t("palette_inferred"), type: "inferred" }
+    ],
+    [t, locale]
+  );
 
   const sourceNode = useMemo(() => {
     // Template node used for cloning during DnD.
@@ -27,12 +32,12 @@ export default function SidebarPalette(props: { graph: Graph | null }) {
       data: {
         id: "",
         type: "inferred",
-        label: "New node",
+        label: t("palette_new_node"),
         metadata: {},
         status: "draft"
       }
     });
-  }, []);
+  }, [t, locale]);
 
   useEffect(() => {
     if (!props.graph) return;
@@ -53,9 +58,10 @@ export default function SidebarPalette(props: { graph: Graph | null }) {
 
   return (
     <div className="h-full w-[180px] border-r border-slate-200 bg-white p-3">
-      <div className="mb-2 text-xs font-semibold text-slate-800">Palette</div>
+      <div className="mb-2 text-xs font-semibold text-slate-800">{t("palette_title")}</div>
       <div className="mb-3 text-[11px] text-slate-600">
-        Mode: <span className="font-medium">{sandboxMode ? "Sandbox (Draft)" : "Main (Firm)"}</span>
+        {t("palette_mode")}{" "}
+        <span className="font-medium">{sandboxMode ? t("palette_sandbox") : t("palette_main")}</span>
       </div>
       <div className="space-y-2">
         {PALETTE.map((item) => (
@@ -82,7 +88,7 @@ export default function SidebarPalette(props: { graph: Graph | null }) {
             }}
           >
             <div className="font-medium">{item.label}</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">drag onto canvas</div>
+            <div className="mt-0.5 text-[11px] text-slate-500">{t("palette_drag_hint")}</div>
           </button>
         ))}
       </div>

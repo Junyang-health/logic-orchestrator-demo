@@ -24,6 +24,12 @@ from app.services.assistant_simulations import (
 from app.services.tavily_search import tavily_search
 from app.services.llm_client import LlmClient, LlmConfig
 from app.services.model_registry import get_active_model
+from app.services.ppt_framework import (
+    run_ppt_enrich_batch,
+    run_ppt_reconcile,
+    run_ppt_skeleton,
+    run_ppt_framework_chat,
+)
 from app.services.skill_url_fetch import fetch_skill_text
 
 router = APIRouter()
@@ -69,6 +75,107 @@ class FetchSkillUrlResponse(BaseModel):
     instruction: str = Field(..., max_length=8000)
     suggested_name: str = Field(default="Remote skill", max_length=120)
     fetched_url: str = Field(default="", description="Final URL after redirects (for display).")
+
+
+class PptSourceSnippetIn(BaseModel):
+    name: str = Field(default="file", max_length=500)
+    text: str = Field(default="", max_length=150000)
+
+
+PptDeckStyle = Literal["consulting_mbb", "government", "academic", "creative"]
+
+
+class PptFrameworkGenerateRequest(BaseModel):
+    mindmap_markdown: str = Field(..., min_length=1, max_length=200000)
+    intent: str = Field(..., min_length=1, max_length=8000)
+    audience: str = Field(default="", max_length=4000)
+    page_count: int = Field(default=8, ge=1, le=40)
+    deck_style: PptDeckStyle = Field(
+        default="consulting_mbb",
+        description="Preset: consulting/MBB, government, academic, or creative; drives tone, titles, and visual conventions.",
+    )
+    style: str = Field(default="", max_length=2000)
+    custom_skills: List[CustomSkillIn] = Field(default_factory=list)
+    builtin_skills: Dict[str, bool] = Field(default_factory=dict)
+    source_snippets: List[PptSourceSnippetIn] = Field(default_factory=list)
+    web_search_query: Optional[str] = None
+
+
+class PptSlideOut(BaseModel):
+    id: str
+    title: str
+    subtitle: str
+    beat: str = Field(
+        default="",
+        description="One-line story beat: how this slide advances the arc (skeleton; optional in exports).",
+    )
+    main: str
+    visual: str = Field(
+        default="",
+        description="Visual anchor and how content is shown (infographics, charts, tables for highlight/contrast).",
+    )
+
+
+class PptFrameworkGenerateResponse(BaseModel):
+    slides: List[PptSlideOut]
+
+
+class PptChatMessageIn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=60000)
+
+
+class PptFrameworkChatRequest(BaseModel):
+    messages: List[PptChatMessageIn] = Field(..., min_length=1)
+    slides: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Current full deck; may be empty before first generation.",
+    )
+    mindmap_markdown: str = Field(..., min_length=1, max_length=200000)
+    intent: str = Field(default="", max_length=8000)
+    audience: str = Field(default="", max_length=4000)
+    page_count: int = Field(default=8, ge=1, le=40)
+    deck_style: PptDeckStyle = Field(
+        default="consulting_mbb",
+        description="Same presets as generate; keep refinements on-style.",
+    )
+    style: str = Field(default="", max_length=2000)
+    target_slide_index: Optional[int] = Field(
+        default=None,
+        description="Optional 0-based index to focus edits on that slide; full slides still returned.",
+    )
+    custom_skills: List[CustomSkillIn] = Field(default_factory=list)
+    builtin_skills: Dict[str, bool] = Field(default_factory=dict)
+    source_snippets: List[PptSourceSnippetIn] = Field(default_factory=list)
+    web_search_query: Optional[str] = None
+
+
+class PptFrameworkChatResponse(BaseModel):
+    reply: str
+    slides: List[PptSlideOut]
+
+
+class PptEnrichBatchRequest(PptFrameworkGenerateRequest):
+    slides: List[Dict[str, Any]] = Field(
+        ...,
+        min_length=1,
+        description="Full current deck (skeleton+partial detail); only indices are enriched.",
+    )
+    indices: List[int] = Field(
+        ...,
+        min_length=1,
+        max_length=8,
+        description="0-based slide indices to fill with main+visual in this request.",
+    )
+
+
+class PptReconcileRequest(PptFrameworkGenerateRequest):
+    slides: List[Dict[str, Any]] = Field(..., min_length=1, description="Full deck after enrichment.")
+
+
+class PptReconcileResponse(BaseModel):
+    reply: str
+    slides: List[PptSlideOut]
 
 
 class AssistantApplyRequest(BaseModel):
@@ -737,3 +844,125 @@ def assistant_mece_apply(req: MeceApplyRequest) -> SimResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"MECE apply failed: {e}") from e
     return SimResponse(mindmap=merged, report=report)
+
+
+@router.post("/assistant/ppt-framework/skeleton", response_model=PptFrameworkGenerateResponse)
+def assistant_ppt_framework_skeleton(req: PptFrameworkGenerateRequest) -> PptFrameworkGenerateResponse:
+    try:
+        max_tok = min(12288, int(os.getenv("LLM_MAX_TOKENS_PPT_SKELETON", "8192")))
+        llm = LlmClient(LlmConfig(model=get_active_model(), max_tokens=max_tok))
+        custom = [s.model_dump() for s in req.custom_skills]
+        source = [s.model_dump() for s in req.source_snippets]
+        slides = run_ppt_skeleton(
+            llm=llm,
+            mindmap_markdown=req.mindmap_markdown,
+            intent=req.intent.strip(),
+            audience=req.audience.strip(),
+            page_count=req.page_count,
+            style=req.style.strip(),
+            custom_skills=custom,
+            builtin_skills=dict(req.builtin_skills or {}),
+            source_snippets=source,
+            web_search_query=(req.web_search_query or "").strip() or None,
+            deck_style=req.deck_style,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"PPT skeleton failed: {e}"
+        ) from e
+    return PptFrameworkGenerateResponse(slides=[PptSlideOut(**{**s, "beat": s.get("beat", "")}) for s in slides])
+
+
+@router.post("/assistant/ppt-framework/enrich-batch", response_model=PptFrameworkGenerateResponse)
+def assistant_ppt_framework_enrich_batch(req: PptEnrichBatchRequest) -> PptFrameworkGenerateResponse:
+    try:
+        max_tok = min(12288, int(os.getenv("LLM_MAX_TOKENS_PPT_ENRICH", "10240")))
+        llm = LlmClient(LlmConfig(model=get_active_model(), max_tokens=max_tok))
+        custom = [s.model_dump() for s in req.custom_skills]
+        source = [s.model_dump() for s in req.source_snippets]
+        out = run_ppt_enrich_batch(
+            llm=llm,
+            mindmap_markdown=req.mindmap_markdown,
+            intent=req.intent.strip(),
+            audience=req.audience.strip(),
+            page_count=req.page_count,
+            style=req.style.strip(),
+            custom_skills=custom,
+            builtin_skills=dict(req.builtin_skills or {}),
+            source_snippets=source,
+            web_search_query=(req.web_search_query or "").strip() or None,
+            deck_style=req.deck_style,
+            slides=[dict(s) for s in req.slides] if req.slides else [],
+            indices=[int(x) for x in req.indices],
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"PPT enrich batch failed: {e}"
+        ) from e
+    return PptFrameworkGenerateResponse(
+        slides=[PptSlideOut(**{**s, "beat": s.get("beat", "")}) for s in out]
+    )
+
+
+@router.post("/assistant/ppt-framework/reconcile", response_model=PptReconcileResponse)
+def assistant_ppt_framework_reconcile(req: PptReconcileRequest) -> PptReconcileResponse:
+    try:
+        max_tok = min(12288, int(os.getenv("LLM_MAX_TOKENS_PPT_RECONCILE", "10240")))
+        llm = LlmClient(LlmConfig(model=get_active_model(), max_tokens=max_tok))
+        custom = [s.model_dump() for s in req.custom_skills]
+        source = [s.model_dump() for s in req.source_snippets]
+        reply, slides = run_ppt_reconcile(
+            llm=llm,
+            mindmap_markdown=req.mindmap_markdown,
+            intent=req.intent.strip(),
+            audience=req.audience.strip(),
+            page_count=req.page_count,
+            style=req.style.strip(),
+            custom_skills=custom,
+            builtin_skills=dict(req.builtin_skills or {}),
+            source_snippets=source,
+            web_search_query=(req.web_search_query or "").strip() or None,
+            deck_style=req.deck_style,
+            slides=[dict(s) for s in req.slides] if req.slides else [],
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"PPT reconcile failed: {e}"
+        ) from e
+    return PptReconcileResponse(
+        reply=reply,
+        slides=[PptSlideOut(**{**s, "beat": s.get("beat", "")}) for s in slides],
+    )
+
+
+@router.post("/assistant/ppt-framework/chat", response_model=PptFrameworkChatResponse)
+def assistant_ppt_framework_chat(req: PptFrameworkChatRequest) -> PptFrameworkChatResponse:
+    try:
+        max_tok = min(16384, int(os.getenv("LLM_MAX_TOKENS_PPT", "12288")))
+        llm = LlmClient(LlmConfig(model=get_active_model(), max_tokens=max_tok))
+        custom = [s.model_dump() for s in req.custom_skills]
+        source = [s.model_dump() for s in req.source_snippets]
+        msgs = [m.model_dump() for m in req.messages]
+        reply, out_slides = run_ppt_framework_chat(
+            llm=llm,
+            messages=msgs,
+            slides=[dict(s) for s in req.slides] if req.slides else [],
+            mindmap_markdown=req.mindmap_markdown,
+            audience=req.audience.strip(),
+            intent=req.intent.strip(),
+            page_count=req.page_count,
+            style=req.style.strip(),
+            target_slide_index=req.target_slide_index,
+            custom_skills=custom,
+            builtin_skills=dict(req.builtin_skills or {}),
+            source_snippets=source,
+            web_search_query=(req.web_search_query or "").strip() or None,
+            deck_style=req.deck_style,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"PPT framework chat failed: {e}"
+        ) from e
+    return PptFrameworkChatResponse(
+        reply=reply, slides=[PptSlideOut(**s) for s in out_slides]
+    )

@@ -61,3 +61,21 @@ export function collectBranchSubgraph(rootId: string, graph: MindmapJson): Mindm
   const edges = graph.edges.filter((e) => inBranch.has(e.source) && inBranch.has(e.target));
   return { nodes, edges };
 }
+
+/** Union of several `collectBranchSubgraph` results (deduped nodes and edges). */
+export function mergeBranchSubgraphs(rootIds: string[], graph: MindmapJson): MindmapJson {
+  const nodeById = new Map<string, MindmapJson["nodes"][number]>();
+  const edgeKey = new Set<string>();
+  const edges: MindmapJson["edges"] = [];
+  for (const rootId of rootIds) {
+    const sub = collectBranchSubgraph(rootId, graph);
+    for (const n of sub.nodes) nodeById.set(n.id, n);
+    for (const e of sub.edges) {
+      const k = `${e.source}→${e.target}::${e.label ?? ""}`;
+      if (edgeKey.has(k)) continue;
+      edgeKey.add(k);
+      edges.push(e);
+    }
+  }
+  return { nodes: Array.from(nodeById.values()), edges };
+}

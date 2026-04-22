@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /* Used by @apply and TSX; defined here so it always resolves (theme.extend alone can fail in some postcss setups) */
+  .shadow-pastel {
+    box-shadow:
+      0 1px 2px rgba(80, 60, 90, 0.04),
+      0 6px 20px -8px rgba(120, 100, 130, 0.08);
+  }
+}
+
 html,
 body {
   height: 100%;
@@ -14,16 +23,15 @@ body {
 @layer base {
   :root {
     color-scheme: light;
-    /* X6 mindmap canvas + edges — SVG resolves these when html.dark toggles (no JS edge relabel). */
-    --mm-canvas-bg: #f8fafc;
-    --mm-edge-line-firm: #0f172a;
-    --mm-edge-line-draft: #94a3b8;
-    /** Firm edges while interactively connecting (preview). */
-    --mm-edge-line-interactive-firm: #2563eb;
-    --mm-edge-label-text-firm: #0f172a;
-    --mm-edge-label-text-draft: #64748b;
-    --mm-edge-label-pill-fill: #ffffff;
-    --mm-edge-label-pill-stroke: #e2e8f0;
+    /* X6 mindmap — muted pastel (canvas + edge SVG) */
+    --mm-canvas-bg: #f3f0f4;
+    --mm-edge-line-firm: #8b7d96;
+    --mm-edge-line-draft: #b4a8bc;
+    --mm-edge-line-interactive-firm: #7c9ab8;
+    --mm-edge-label-text-firm: #5c5363;
+    --mm-edge-label-text-draft: #9a8fa8;
+    --mm-edge-label-pill-fill: #fefcfd;
+    --mm-edge-label-pill-stroke: #e4dde8;
   }
 
   body {
@@ -40,73 +48,82 @@ body {
       "Segoe UI Emoji";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: radial-gradient(1200px 800px at 10% 0%, rgba(59, 130, 246, 0.14), transparent 55%),
-      radial-gradient(900px 700px at 90% 10%, rgba(236, 72, 153, 0.12), transparent 55%),
-      linear-gradient(to bottom, rgb(248 250 252), rgb(241 245 249));
+    /* Muted pastel wash */
+    background:
+      radial-gradient(1000px 700px at 8% 0%, rgba(196, 181, 210, 0.22), transparent 58%),
+      radial-gradient(900px 600px at 95% 8%, rgba(180, 205, 198, 0.2), transparent 55%),
+      radial-gradient(800px 500px at 50% 100%, rgba(220, 200, 190, 0.18), transparent 50%),
+      linear-gradient(to bottom, #f7f4f2, #efe9ec);
   }
 
   html.dark {
     color-scheme: dark;
-    --mm-canvas-bg: #0b1220;
-    --mm-edge-line-firm: #e2e8f0;
-    --mm-edge-line-draft: #64748b;
-    --mm-edge-line-interactive-firm: #93c5fd;
-    --mm-edge-label-text-firm: #f8fafc;
-    --mm-edge-label-text-draft: #64748b;
-    --mm-edge-label-pill-fill: #334155;
-    --mm-edge-label-pill-stroke: #64748b;
+    --mm-canvas-bg: #1a1620;
+    --mm-edge-line-firm: #c4b8c8;
+    --mm-edge-line-draft: #6e6578;
+    --mm-edge-line-interactive-firm: #9dafc4;
+    --mm-edge-label-text-firm: #e8e0eb;
+    --mm-edge-label-text-draft: #9a91a3;
+    --mm-edge-label-pill-fill: #2a2532;
+    --mm-edge-label-pill-stroke: #4a4258;
   }
 
   html.dark body {
-    background: radial-gradient(1200px 800px at 10% 0%, rgba(56, 189, 248, 0.10), transparent 55%),
-      radial-gradient(900px 700px at 90% 10%, rgba(168, 85, 247, 0.10), transparent 55%),
-      linear-gradient(to bottom, rgb(2 6 23), rgb(15 23 42));
+    background:
+      radial-gradient(1000px 700px at 8% 0%, rgba(120, 100, 150, 0.18), transparent 58%),
+      radial-gradient(800px 600px at 90% 12%, rgba(60, 90, 85, 0.15), transparent 55%),
+      linear-gradient(to bottom, #121018, #1c181f);
   }
 }
 
 @layer components {
-  /* Day: crisp white card. Night: layered slate glass. */
   .ios-card {
-    @apply rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.08)];
-    @apply dark:border-slate-700/70 dark:bg-slate-900/70 dark:shadow-[0_10px_30px_-18px_rgba(0,0,0,0.60)] dark:backdrop-blur-xl;
+    @apply rounded-2xl border border-rose-100/50 bg-white/50 shadow-pastel backdrop-blur-md;
+    @apply dark:border-violet-900/30 dark:bg-[rgb(32_28_40_/_0.55)] dark:shadow-[0_8px_28px_-16px_rgba(0,0,0,0.45)] dark:backdrop-blur-xl;
   }
 
   .ios-card-solid {
-    @apply rounded-2xl border border-slate-200/90 bg-white shadow-sm;
-    @apply dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_10px_30px_-18px_rgba(0,0,0,0.70)];
+    @apply rounded-2xl border border-rose-100/50 bg-stone-50/90 shadow-pastel;
+    @apply dark:border-violet-900/40 dark:bg-[#232028] dark:shadow-pastel;
   }
 
   .ios-divider {
-    @apply border-slate-200/70 dark:border-slate-700/70;
+    @apply border-rose-100/50 dark:border-violet-900/30;
   }
 
   .ios-button {
-    @apply inline-flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm backdrop-blur-xl transition;
-    @apply hover:bg-white active:translate-y-[0.5px] active:shadow-none disabled:opacity-50;
-    @apply dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:hover:bg-slate-900;
+    @apply inline-flex items-center justify-center gap-1 rounded-full border border-rose-100/60 bg-stone-50/90 px-3 py-1.5 text-xs font-medium text-stone-600 shadow-pastel backdrop-blur-sm transition;
+    @apply hover:bg-rose-50/80 active:translate-y-[0.5px] active:shadow-none disabled:opacity-50;
+    @apply dark:border-violet-800/50 dark:bg-[#2a2633]/80 dark:text-stone-200 dark:hover:bg-[#34303c];
   }
 
   .ios-button-primary {
-    @apply inline-flex items-center justify-center rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition;
-    @apply hover:bg-slate-800 active:translate-y-[0.5px] active:shadow-none disabled:opacity-50;
-    @apply dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white;
+    @apply inline-flex items-center justify-center rounded-full bg-[#a89bb8] px-3 py-2 text-xs font-semibold text-white shadow-pastel transition;
+    @apply hover:bg-[#9a8ca8] active:translate-y-[0.5px] active:shadow-none disabled:opacity-50;
+    @apply dark:bg-[#7a6a8a] dark:text-stone-50 dark:hover:bg-[#8a7a9a];
   }
 
   .ios-input {
-    @apply w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-900 shadow-sm outline-none backdrop-blur-xl;
-    @apply focus:border-sky-400 focus:ring-2 focus:ring-sky-200;
-    @apply dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400 dark:focus:ring-sky-900/40;
+    @apply w-full rounded-xl border border-rose-100/60 bg-white/50 px-3 py-2 text-xs text-stone-700 shadow-pastel outline-none backdrop-blur-sm;
+    @apply focus:border-violet-200 focus:ring-2 focus:ring-violet-100;
+    @apply dark:border-violet-800/50 dark:bg-[#1f1c24]/80 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-violet-500/50 dark:focus:ring-violet-900/30;
   }
 
   .ios-select {
-    @apply w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-900 shadow-sm outline-none backdrop-blur-xl;
-    @apply focus:border-sky-400 focus:ring-2 focus:ring-sky-200;
-    @apply dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-900/40;
+    @apply w-full rounded-xl border border-rose-100/60 bg-white/50 px-3 py-2 text-xs text-stone-700 shadow-pastel outline-none backdrop-blur-sm;
+    @apply focus:border-violet-200 focus:ring-2 focus:ring-violet-100;
+    @apply dark:border-violet-800/50 dark:bg-[#1f1c24]/80 dark:text-stone-100 dark:focus:border-violet-500/50 dark:focus:ring-violet-900/30;
+  }
+
+  .ios-field {
+    @apply w-full rounded-xl border border-rose-100/60 bg-white/50 px-3 py-2 text-xs text-stone-700 shadow-pastel outline-none backdrop-blur-sm;
+    @apply focus:border-violet-200 focus:ring-2 focus:ring-violet-100;
+    @apply dark:border-violet-800/50 dark:bg-[#1f1c24]/80 dark:text-stone-100;
   }
 
   .ios-segment {
-    @apply inline-flex rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm backdrop-blur-xl;
-    @apply dark:border-slate-700 dark:bg-slate-900/60;
+    @apply inline-flex rounded-full border border-rose-100/50 bg-stone-50/60 p-1 shadow-pastel backdrop-blur-sm;
+    @apply dark:border-violet-900/40 dark:bg-[#25222c]/70;
   }
 
   .ios-segment-item {
@@ -114,35 +131,34 @@ body {
   }
 
   .ios-segment-item-active {
-    @apply bg-white text-slate-900 shadow-[0_6px_18px_-14px_rgba(2,6,23,0.55)];
-    @apply dark:bg-slate-950 dark:text-slate-50 dark:shadow-[0_6px_18px_-14px_rgba(0,0,0,0.75)];
+    @apply bg-white/90 text-stone-800 shadow-pastel;
+    @apply dark:bg-[#2f2a38] dark:text-stone-100 dark:shadow-[0_4px_14px_-8px_rgba(0,0,0,0.5)];
   }
 
   .ios-segment-item-inactive {
-    @apply text-slate-600 hover:bg-white/60;
-    @apply dark:text-slate-300 dark:hover:bg-slate-800/40;
+    @apply text-stone-500 hover:bg-rose-50/50;
+    @apply dark:text-stone-400 dark:hover:bg-[#322e3a]/80;
   }
 
-  /* Apple-like pill toggle */
   .ios-toggle {
-    @apply relative inline-flex h-8 w-14 items-center justify-center rounded-full border border-slate-200 bg-white/70 shadow-sm backdrop-blur-xl transition;
-    @apply hover:bg-white active:scale-[0.99];
-    @apply dark:border-slate-700 dark:bg-slate-900/60 dark:hover:bg-slate-900;
+    @apply relative inline-flex h-8 w-14 items-center justify-center rounded-full border border-rose-100/50 bg-stone-50/80 shadow-pastel backdrop-blur-sm transition;
+    @apply hover:bg-rose-50/50 active:scale-[0.99];
+    @apply dark:border-violet-900/50 dark:bg-[#2a2633]/80 dark:hover:bg-[#322e3a];
   }
 
   .ios-toggle-track {
     @apply absolute inset-0 rounded-full transition;
-    @apply bg-slate-200/70 dark:bg-slate-800/70;
+    @apply bg-rose-100/50 dark:bg-violet-950/50;
   }
 
   .ios-toggle-knob {
-    @apply absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-[0_6px_14px_-10px_rgba(2,6,23,0.55)] transition-transform;
-    @apply dark:bg-slate-100;
+    @apply absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-pastel transition-transform;
+    @apply dark:bg-stone-200;
   }
 
   .ios-toggle-icon {
     @apply relative z-10 text-xs;
-    filter: saturate(0.95);
+    filter: saturate(0.7) opacity(0.9);
   }
 }
 
@@ -152,11 +168,11 @@ body {
 }
 
 .ios-toggle .ios-toggle-track[data-on="true"] {
-  background: rgba(56, 189, 248, 0.45);
+  background: rgba(180, 170, 200, 0.55);
 }
 
 html.dark .ios-toggle .ios-toggle-track[data-on="true"] {
-  background: rgba(96, 165, 250, 0.35);
+  background: rgba(120, 100, 150, 0.45);
 }
 
 /* X6 selection / subtree highlighting (parent→child edges) */
@@ -170,69 +186,68 @@ html.dark .ios-toggle .ios-toggle-track[data-on="true"] {
 
 .x6-node.mm-node-connected {
   opacity: 1;
-  filter: drop-shadow(0 10px 16px rgba(2, 6, 23, 0.10));
+  filter: drop-shadow(0 8px 14px rgba(100, 80, 120, 0.08));
 }
 
 /* Descendants of the selected node (subtree) */
 .x6-node.mm-node-subtree {
   opacity: 1;
-  filter: drop-shadow(0 0 0 1px rgba(5, 150, 105, 0.55)) drop-shadow(0 8px 18px rgba(5, 150, 105, 0.2));
+  filter: drop-shadow(0 0 0 1px rgba(130, 170, 150, 0.45)) drop-shadow(0 8px 16px rgba(100, 140, 120, 0.15));
 }
 
 .x6-node.mm-node-selected {
   opacity: 1;
-  filter: drop-shadow(0 0 0 2px rgba(37, 99, 235, 0.45)) drop-shadow(0 14px 26px rgba(37, 99, 235, 0.32));
+  filter: drop-shadow(0 0 0 2px rgba(140, 150, 190, 0.5)) drop-shadow(0 12px 22px rgba(120, 130, 180, 0.2));
 }
 
 .x6-edge.mm-edge-subtree .x6-edge-path {
-  stroke: rgb(5 150 105) !important; /* emerald-600 */
+  stroke: rgb(130 160 150) !important;
   stroke-width: 3.25px !important;
-  opacity: 1 !important;
+  opacity: 0.9 !important;
 }
 
 .x6-edge.mm-edge-connected .x6-edge-path {
-  stroke: rgb(37 99 235) !important; /* blue-600 */
+  stroke: rgb(140 155 195) !important;
   stroke-width: 3px !important;
-  opacity: 1 !important;
+  opacity: 0.9 !important;
 }
 
 .x6-edge.mm-edge-selected .x6-edge-path {
-  stroke: rgb(124 58 237) !important; /* violet-600 */
+  stroke: rgb(170 150 200) !important;
   stroke-width: 3.5px !important;
-  opacity: 1 !important;
+  opacity: 0.95 !important;
 }
 
-/* Night mode: stronger glow + brighter strokes */
 html.dark .x6-node.mm-node-connected {
-  filter: drop-shadow(0 0 10px rgba(148, 163, 184, 0.55)) drop-shadow(0 0 18px rgba(59, 130, 246, 0.25));
+  filter: drop-shadow(0 0 8px rgba(150, 140, 170, 0.35)) drop-shadow(0 0 14px rgba(100, 90, 130, 0.2));
 }
 
 html.dark .x6-node.mm-node-subtree {
-  filter: drop-shadow(0 0 0 1px rgba(52, 211, 153, 0.75)) drop-shadow(0 0 14px rgba(16, 185, 129, 0.35));
+  filter: drop-shadow(0 0 0 1px rgba(140 180 165 / 0.6)) drop-shadow(0 0 12px rgba(100 150 130 / 0.25));
 }
 
 html.dark .x6-node.mm-node-selected {
-  filter: drop-shadow(0 0 0 2px rgba(96, 165, 250, 0.9)) drop-shadow(0 0 22px rgba(59, 130, 246, 0.5));
+  filter: drop-shadow(0 0 0 2px rgba(150 160 200 / 0.65)) drop-shadow(0 0 18px rgba(120 130 180 / 0.35));
 }
 
 html.dark .x6-edge.mm-edge-subtree .x6-edge-path {
-  stroke: rgb(52 211 153) !important; /* emerald-400 */
-  stroke-width: 4px !important;
-  filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.65));
-  opacity: 1 !important;
+  stroke: rgb(140 180 160) !important;
+  stroke-width: 3.5px !important;
+  filter: drop-shadow(0 0 5px rgba(120 170 150 / 0.4));
+  opacity: 0.95 !important;
 }
 
 html.dark .x6-edge.mm-edge-connected .x6-edge-path {
-  stroke: rgb(96 165 250) !important; /* blue-400 */
-  stroke-width: 4px !important;
-  filter: drop-shadow(0 0 6px rgba(96, 165, 250, 0.75));
-  opacity: 1 !important;
+  stroke: rgb(150 165 205) !important;
+  stroke-width: 3.5px !important;
+  filter: drop-shadow(0 0 5px rgba(130 150 200 / 0.45));
+  opacity: 0.95 !important;
 }
 
 html.dark .x6-edge.mm-edge-selected .x6-edge-path {
-  stroke: rgb(192 132 252) !important; /* violet-400 */
-  stroke-width: 4.5px !important;
-  filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.85));
-  opacity: 1 !important;
+  stroke: rgb(190 170 220) !important;
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 6px rgba(180 160 210 / 0.5));
+  opacity: 0.95 !important;
 }
 

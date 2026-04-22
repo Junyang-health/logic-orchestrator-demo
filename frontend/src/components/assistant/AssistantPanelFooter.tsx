@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { MessageCircle, Send, Wand2 } from "lucide-react";
+import { useI18n } from "../../i18n/useI18n";
 
 export type AssistantPanelMode = "chat" | "optimism" | "blackSwan" | "mece" | "roundtable";
 
@@ -62,6 +63,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
     onApplyWithInstruction
   } = props;
 
+  const { t } = useI18n();
   const isRoundtable = mode === "roundtable";
   const isMece = mode === "mece";
 
@@ -70,37 +72,26 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
       {error ? <p className="text-[10px] text-red-700 dark:text-red-400">{error}</p> : null}
       {!selectedNodeId ? (
         <p className="text-[10px] text-amber-800 dark:text-amber-200">
-          {isRoundtable ? (
-            <>
-              Select a node on the canvas — the roundtable focuses on that node, and edits apply to its subtree root (same as session
-              target).
-            </>
-          ) : isMece ? (
-            <>
-              Select an anchor node on the canvas. MECE analysis covers its <span className="font-medium">direct children</span> and{" "}
-              <span className="font-medium">their children</span> (two levels only). Evidence uses project files (if a project is selected
-              in Source material) plus Evidence nodes in the subtree.
-            </>
-          ) : (
-            <>
-              Select the branch root node on the canvas for <span className="font-medium">Summarize &amp; apply</span>.
-            </>
-          )}
+          {isRoundtable
+            ? t("footer_select_roundtable")
+            : isMece
+              ? t("footer_select_mece")
+              : t("footer_select_apply")}
         </p>
       ) : (
         <p className="text-[10px] text-slate-600 dark:text-slate-400">
-          {isRoundtable ? "Focus & apply root: " : "Apply target (subtree root): "}
+          {isRoundtable ? t("footer_apply_root") : t("footer_apply_target")}
           <code className="rounded bg-white px-0.5 dark:bg-slate-900 dark:text-slate-200">{selectedNodeId}</code>
         </p>
       )}
       {isRoundtable ? (
         <>
           <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Steering for next round (optional)
+            {t("footer_steering")}
           </label>
           <textarea
             className="w-full resize-none rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100 dark:placeholder:text-slate-500"
-            placeholder="e.g. Push on evidence gaps, or ask everyone for one concrete map tweak (discussion only)."
+            placeholder={t("footer_steering_ph")}
             rows={2}
             value={rtSteering}
             disabled={rtRoundBusy}
@@ -114,7 +105,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
               onClick={() => void onRunRoundtableRound()}
             >
               <MessageCircle className="h-3.5 w-3.5" />
-              {rtRoundBusy ? "Running round…" : "Run discussion round"}
+              {rtRoundBusy ? t("footer_run_round_busy") : t("footer_run_round")}
             </button>
             <button
               type="button"
@@ -123,7 +114,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
               onClick={() => void onProposeRoundtable()}
             >
               <Wand2 className="h-3.5 w-3.5" />
-              {rtProposeBusy ? "Summarizing…" : "Summarize & propose mindmap edits"}
+              {rtProposeBusy ? t("footer_propose_busy") : t("footer_propose")}
             </button>
             {hasRoundtableProposal ? (
               <>
@@ -134,7 +125,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
                     checked={rtConfirmApply}
                     onChange={(e) => onRtConfirmApplyChange(e.target.checked)}
                   />
-                  <span>I confirm applying the proposed patch to the mindmap (subtree rooted at the target node).</span>
+                  <span>{t("footer_confirm_apply")}</span>
                 </label>
                 <button
                   type="button"
@@ -143,7 +134,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
                   onClick={() => void onApplyRoundtablePatch()}
                 >
                   <Wand2 className="h-3.5 w-3.5" />
-                  {rtApplyBusy ? "Applying…" : "Apply confirmed edits to mindmap"}
+                  {rtApplyBusy ? t("footer_applying") : t("footer_apply_confirmed")}
                 </button>
               </>
             ) : null}
@@ -152,11 +143,11 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
       ) : (
         <>
           <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Apply instruction (optional)
+            {t("footer_apply_instr")}
           </label>
           <textarea
             className="w-full resize-none rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100 dark:placeholder:text-slate-500"
-            placeholder="Example: Add a new inferred node summarizing risks, then connect evidence nodes that support it."
+            placeholder={t("footer_apply_instr_ph")}
             rows={2}
             value={applyInstruction}
             disabled={applyBusy}
@@ -164,7 +155,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
           />
           <textarea
             className="w-full resize-none rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100 dark:placeholder:text-slate-500"
-            placeholder="Message…"
+            placeholder={t("footer_message_ph")}
             rows={3}
             value={draft}
             disabled={chatBusy}
@@ -184,7 +175,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
               onClick={() => void onSendChat()}
             >
               <Send className="h-3.5 w-3.5" />
-              {chatBusy ? "Sending…" : "Send"}
+              {chatBusy ? t("footer_sending") : t("footer_send")}
             </button>
             <button
               type="button"
@@ -193,7 +184,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
               onClick={() => void onApplyToMindmap()}
             >
               <Wand2 className="h-3.5 w-3.5" />
-              {applyBusy ? "Applying…" : "Summarize & apply to selected node"}
+              {applyBusy ? t("footer_applying") : t("footer_summarize_node")}
             </button>
             <button
               type="button"
@@ -202,7 +193,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
               onClick={() => void onApplyWithInstruction()}
             >
               <Wand2 className="h-3.5 w-3.5" />
-              {applyBusy ? "Applying…" : "Apply instruction"}
+              {applyBusy ? t("footer_applying") : t("footer_apply_direct")}
             </button>
           </div>
         </>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Image as ImageIcon, Trash2, Upload } from "lucide-react";
+import { useI18n } from "../i18n/useI18n";
 import useUiStore from "../store/useUiStore";
 import { combineGraphs } from "../lib/graphBranch";
 import { classifySourceKind } from "../types/sourceMaterial";
@@ -18,6 +19,7 @@ function formatBytes(n: number): string {
 }
 
 export default function SourceMaterialPanel(props: { backendBase: string }) {
+  const { t, locale } = useI18n();
   const sourceFiles = useUiStore((s) => s.sourceFiles);
   const addSourceFiles = useUiStore((s) => s.addSourceFiles);
   const removeSourceFile = useUiStore((s) => s.removeSourceFile);
@@ -127,12 +129,12 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
 
   const saveCanvasToProject = useCallback(async () => {
     if (!projectId) {
-      setSaveMessage("Select a project first.");
+      setSaveMessage(t("err_select_project"));
       return;
     }
     const combined = combineGraphs(mainGraph, sandboxGraph);
     if (!combined.nodes.length) {
-      setSaveMessage("Nothing to save — the canvas is empty.");
+      setSaveMessage(t("err_canvas_empty"));
       return;
     }
     setSaveBusy(true);
@@ -153,13 +155,13 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       }
       const ts = (raw as { updated_at_ms?: number }).updated_at_ms;
       if (typeof ts === "number") setSavedCanvasUpdatedMs(ts);
-      setSaveMessage("Mindmap saved to this project.");
+      setSaveMessage(t("sm_saved_ok"));
     } catch {
-      setSaveMessage("Save failed (network error).");
+      setSaveMessage(t("err_save_net"));
     } finally {
       setSaveBusy(false);
     }
-  }, [projectId, props.backendBase, mainGraph, sandboxGraph]);
+  }, [projectId, props.backendBase, mainGraph, sandboxGraph, t]);
 
   useEffect(() => {
     (async () => {
@@ -198,6 +200,10 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     prevStoredIdsRef.current = [];
     setSaveMessage("");
   }, [projectId]);
+
+  useEffect(() => {
+    setSaveMessage("");
+  }, [locale]);
 
   useEffect(() => {
     const ids = storedFiles.map((f) => f.id);
@@ -246,7 +252,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           loadMainGraph(json);
           return;
         } catch {
-          setError("Network error — is the backend running?");
+          setError(t("err_net"));
           return;
         } finally {
           setBusy(false);
@@ -299,7 +305,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           loadMainGraph(json);
           return;
         } catch {
-          setError("Network error — is the backend running?");
+          setError(t("err_net"));
           return;
         } finally {
           setBusy(false);
@@ -307,15 +313,11 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       }
 
       if (projectId && storedFiles.length > 0 && selectedStoredIds.length === 0) {
-        setError(
-          "Select at least one stored file to include, or write a longer intent / goal (12+ characters) for a starter mindmap without files."
-        );
+        setError(t("err_pick_files"));
         return;
       }
 
-      setError(
-        `Add at least one file, or describe your intent / goal in at least ${MIN_INTENT_BOOTSTRAP} characters to generate a starter mindmap without source material.`
-      );
+      setError(t("err_add_files_intent", { n: MIN_INTENT_BOOTSTRAP }));
       return;
     }
     setBusy(true);
@@ -346,7 +348,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       clearSourceFiles();
       refreshStoredFiles().catch(() => {});
     } catch {
-      setError("Network error — is the backend running?");
+      setError(t("err_net"));
     } finally {
       setBusy(false);
     }
@@ -361,32 +363,30 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     intent,
     selectedStoredIds,
     canGenerateFromStoredSelection,
-    trimmedIntent
+    trimmedIntent,
+    t,
+    locale
   ]);
 
   return (
     <div className="ios-card p-3">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Source material</div>
-          <p className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-slate-300">
-            Upload PDFs, Word/Excel, or images. Some file types may be summarized only as placeholders. With no files,
-            you can still generate a starter mindmap from your intent / goal ({MIN_INTENT_BOOTSTRAP}+ characters) using
-            the model&apos;s general knowledge (clearly exploratory, not tied to documents).
-          </p>
+          <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("sm_title")}</div>
+          <p className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-slate-300">{t("sm_intro")}</p>
         </div>
         <Upload className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <label className="text-[11px] text-slate-700 dark:text-slate-200">
-          Project
+          {t("sm_project")}
           <select
             className="mt-1 ios-select"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
           >
-            <option value="">(no project)</option>
+            <option value="">{t("sm_no_project")}</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} ({p.id})
@@ -395,12 +395,12 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           </select>
         </label>
         <div className="text-[11px] text-slate-700 dark:text-slate-200">
-          New project
+          {t("sm_new_project")}
           <div className="mt-1 flex gap-2">
             <input
               className="ios-input py-1.5"
               value={newProjectName}
-              placeholder="e.g. Client A"
+              placeholder={t("sm_new_project_ph")}
               onChange={(e) => setNewProjectName(e.target.value)}
               onKeyDown={async (e) => {
                 if (e.key !== "Enter") return;
@@ -436,7 +436,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                 setNewProjectName("");
               }}
             >
-              Create
+              {t("sm_create")}
             </button>
           </div>
         </div>
@@ -445,18 +445,15 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       {projectId ? (
         <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-2.5 dark:border-slate-600 dark:bg-slate-950/40">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-            Saved canvas
+            {t("sm_saved_canvas")}
           </div>
-          <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">
-            Save the current graph to this project so it reloads when you open the project again. Uses main map +
-            sandbox drafts as one snapshot.
-          </p>
+          <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("sm_saved_help")}</p>
           {savedCanvasUpdatedMs ? (
             <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">
-              Last saved: {new Date(savedCanvasUpdatedMs).toLocaleString()}
+              {t("sm_last_saved")} {new Date(savedCanvasUpdatedMs).toLocaleString()}
             </p>
           ) : (
-            <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">No save on disk yet for this project.</p>
+            <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">{t("sm_no_save_yet")}</p>
           )}
           <div className="mt-2 flex flex-wrap gap-2">
             <button
@@ -465,16 +462,16 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
               disabled={saveBusy || !hasCanvasNodes}
               onClick={() => void saveCanvasToProject()}
             >
-              {saveBusy ? "Saving…" : "Save mindmap to project"}
+              {saveBusy ? t("sm_save_busy") : t("sm_save_btn")}
             </button>
             <button type="button" className="ios-button px-3 py-1.5 text-[11px]" onClick={() => void fetchAndApplySavedCanvas()}>
-              Reload from project
+              {t("sm_reload")}
             </button>
           </div>
           {saveMessage ? (
             <p
               className={`mt-1.5 text-[10px] ${
-                saveMessage.includes("saved") ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-300"
+                saveMessage === t("sm_saved_ok") ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-300"
               }`}
             >
               {saveMessage}
@@ -484,13 +481,13 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       ) : null}
 
       <label className="mt-3 block text-[11px] text-slate-700 dark:text-slate-200">
-        Intent / goal (guides the mindmap; {MIN_INTENT_BOOTSTRAP}+ chars enables file-free starter map)
+        {t("sm_intent", { n: MIN_INTENT_BOOTSTRAP })}
         <textarea
           className="mt-1 ios-input resize-y"
           rows={3}
           value={intent}
           onChange={(e) => setIntent(e.target.value)}
-          placeholder="Example: Summarize the document into a mindmap focused on key risks, causes, and recommended actions."
+          placeholder={t("sm_intent_ph")}
         />
       </label>
 
@@ -524,8 +521,8 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
             : "border-slate-200/80 bg-white/55 hover:border-slate-300 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/40 dark:hover:border-slate-600"
         ].join(" ")}
       >
-        <span className="text-xs font-medium text-slate-700 dark:text-slate-100">Drop files here or click to browse</span>
-        <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Multiple files allowed</span>
+        <span className="text-xs font-medium text-slate-700 dark:text-slate-100">{t("sm_drop")}</span>
+        <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{t("sm_multi")}</span>
         <input
           ref={inputRef}
           type="file"
@@ -554,27 +551,25 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         <div className="mt-3">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
             <span>
-              {storedFiles.length} file(s) stored — {selectedStoredIds.length} selected for mindmap
+              {t("sm_stored_line", { files: storedFiles.length, n: selectedStoredIds.length })}
             </span>
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => refreshStoredFiles()}>
-                Refresh
+                {t("sm_refresh")}
               </button>
               <button
                 type="button"
                 className="text-sky-700 underline"
                 onClick={() => setSelectedStoredIds(storedFiles.map((x) => x.id))}
               >
-                Select all
+                {t("review_select_all")}
               </button>
               <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => setSelectedStoredIds([])}>
-                Clear selection
+                {t("review_clear_selection")}
               </button>
             </div>
           </div>
-          <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">
-            Check the files to include when you generate from stored project. Uncheck files you want to skip.
-          </p>
+          <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("sm_stored_help")}</p>
           <ul className="mt-1 max-h-40 space-y-1 overflow-auto rounded-xl border border-slate-200 bg-white/60 p-1 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/30">
             {storedFiles.map((f) => {
               const checked = selectedStoredIds.includes(f.id);
@@ -589,9 +584,9 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                         prev.includes(f.id) ? prev.filter((id) => id !== f.id) : [...prev, f.id]
                       );
                     }}
-                    aria-label={`Include ${f.filename} in mindmap`}
+                    aria-label={t("sm_include_aria", { name: f.filename })}
                   />
-                  <a className="min-w-0 flex-1 truncate font-medium text-slate-800 underline dark:text-slate-100" href={`${projectDownloadBase}/${encodeURIComponent(f.id)}`} target="_blank" rel="noreferrer" title="Download" onClick={(e) => e.stopPropagation()}>
+                  <a className="min-w-0 flex-1 truncate font-medium text-slate-800 underline dark:text-slate-100" href={`${projectDownloadBase}/${encodeURIComponent(f.id)}`} target="_blank" rel="noreferrer" title={t("sm_download")} onClick={(e) => e.stopPropagation()}>
                     {f.filename}
                   </a>
                   <span className="shrink-0 text-slate-500">{formatBytes(f.size)}</span>
@@ -614,12 +609,12 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                         setSelectedStoredIds((prev) => prev.filter((id) => id !== f.id));
                         refreshStoredFiles().catch(() => {});
                       } catch {
-                        setError("Delete failed (network error)");
+                        setError(t("err_delete_net"));
                       }
                     }}
-                    title="Delete from project"
+                    title={t("sm_delete_project")}
                   >
-                    Delete
+                    {t("sm_delete")}
                   </button>
                 </li>
               );
@@ -631,7 +626,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       {sourceFiles.length > 0 && (
         <div className="mt-3 space-y-1">
           <div className="flex items-center justify-between text-[11px] text-slate-600">
-            <span>{sourceFiles.length} file(s) queued</span>
+            <span>{t("sm_queued", { n: sourceFiles.length })}</span>
             <button
               type="button"
               className="text-red-700 hover:underline"
@@ -640,7 +635,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                 clearSourceFiles();
               }}
             >
-              Clear all
+              {t("sm_clear_all")}
             </button>
           </div>
           <ul className="max-h-40 space-y-1 overflow-auto rounded border border-slate-100 bg-slate-50 p-1">
@@ -665,7 +660,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                   <button
                     type="button"
                     className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 hover:text-red-700"
-                    title="Remove"
+                    title={t("sm_remove")}
                     onClick={(e) => {
                       e.stopPropagation();
                       removeSourceFile(entry.id);
@@ -687,14 +682,14 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         onClick={() => buildMindmap()}
       >
         {busy
-          ? "Generating mindmap…"
+          ? t("sm_generating")
           : sourceFiles.length > 0
-            ? "Generate mindmap from queued files"
+            ? t("sm_gen_queued")
             : canGenerateFromStoredSelection
-              ? "Generate mindmap from stored project"
+              ? t("sm_gen_stored")
               : canBootstrapFromIntent
-                ? "Generate starter mindmap (intent only)"
-                : "Generate mindmap"}
+                ? t("sm_gen_intent")
+                : t("sm_gen")}
       </button>
 
       {error ? <p className="mt-2 text-[11px] text-red-700 dark:text-red-300">{error}</p> : null}

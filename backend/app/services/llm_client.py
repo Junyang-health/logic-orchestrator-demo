@@ -23,6 +23,53 @@ def _strip_code_fences(text: str) -> str:
     return t.strip()
 
 
+def _json_loads_lenient(raw: str) -> Any:
+    """
+    LLMs often emit invalid JSON (unescaped newlines or quotes in strings, truncation).
+    Tries: strict json.loads, slice from first { or [, then json_repair.
+    May return a dict or list (callers e.g. PPT may accept a top-level slides array).
+    """
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("LLM returned empty text for JSON")
+
+    variants: list[str] = []
+    for t in (text, _strip_code_fences(text)):
+        if t and t not in variants:
+            variants.append(t)
+        cands = [i for i in (t.find("{"), t.find("[")) if i != -1]
+        st = min(cands) if cands else -1
+        if st > 0 and t[st:] not in variants:
+            variants.append(t[st:])
+
+    last_err: Exception | None = None
+    for t in variants:
+        try:
+            return json.loads(t)
+        except json.JSONDecodeError as e:
+            last_err = e
+            continue
+
+    try:
+        from json_repair import repair_json
+    except ImportError:  # pragma: no cover
+        repair_json = None  # type: ignore[assignment, misc]
+    if repair_json is not None:
+        for t in variants:
+            try:
+                return repair_json(t, return_objects=True, skip_json_loads=True)
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+        try:
+            s2 = repair_json(text, return_objects=False)  # type: ignore[union-attr]
+            return json.loads(str(s2))
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+
+    msg = str(last_err) if last_err else "unknown"
+    raise ValueError(f"LLM output was not valid JSON: {msg}") from last_err
+
+
 def _looks_like_gemini_model(model_id: str) -> bool:
     m = (model_id or "").strip().lower()
     return m.startswith("gemini-") or m.startswith("models/gemini-") or m.startswith("gemini:")
@@ -141,6 +188,9 @@ class LlmClient:
 
         url = f"{self._deepseek_base_url()}/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}
+        # deepseek-chat accepts at most 8192 output tokens; larger values can return HTTP 400.
+        # https://api-docs.deepseek.com/api/create-chat-completion
+        mt = min(8192, max(256, int(self._cfg.max_tokens)))
         payload = {
             "model": model,
             "messages": [
@@ -148,10 +198,18 @@ class LlmClient:
                 {"role": "user", "content": user},
             ],
             "temperature": 0.2,
+            "max_tokens": mt,
         }
 
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             r = client.post(url, headers=headers, json=payload)
+            if r.status_code == 400:
+                detail = (r.text or "")[:1200]
+                raise RuntimeError(
+                    "DeepSeek request rejected (400). For deepseek-chat, max output tokens is at most 8192; "
+                    "input + output must also fit the model context. "
+                    f"API message: {detail}"
+                )
             r.raise_for_status()
             data = r.json()
         try:
@@ -213,7 +271,7 @@ class LlmClient:
         # Anthropic is intentionally disabled for this project.
         raise RuntimeError("No vision-capable provider available. Configure GEMINI_API_KEY.")
 
-    def generate_json(self, *, system: str, user: str) -> dict[str, Any]:
+    def generate_json(self, *, system: str, user: str) -> Any:
         model_id = self._cfg.model
 
         # Enforce fallback policy: Gemini preferred, DeepSeek backup.
@@ -234,13 +292,7 @@ class LlmClient:
                         user=prompt_user,
                     )
                     raw = _strip_code_fences(text.strip())
-                    try:
-                        return json.loads(raw)
-                    except json.JSONDecodeError:
-                        start = min([i for i in [raw.find("{"), raw.find("[")] if i != -1], default=-1)
-                        if start == -1:
-                            raise
-                        return json.loads(raw[start:])
+                    return _json_loads_lenient(raw)
                 except Exception as e:
                     last_err = e
                     if _is_transient_http_error(e) and attempt < 3:
@@ -268,18 +320,26 @@ class LlmClient:
                     "Return JSON only. No markdown.",
                 ]
             ).strip()
+            toks = min(16384, max(512, int(self._cfg.max_tokens)))
             last_err: Exception | None = None
             for attempt in range(4):
                 try:
-                    resp = client.models.generate_content(model=model, contents=prompt)
-                    raw = _strip_code_fences((getattr(resp, "text", None) or "").strip())
                     try:
-                        return json.loads(raw)
-                    except json.JSONDecodeError:
-                        start = min([i for i in [raw.find("{"), raw.find("[")] if i != -1], default=-1)
-                        if start == -1:
-                            raise
-                        return json.loads(raw[start:])
+                        from google.genai import types  # type: ignore
+                    except Exception:  # pragma: no cover
+                        types = None  # type: ignore[assignment]
+                    if types is not None:
+                        try:
+                            cfg = types.GenerateContentConfig(max_output_tokens=toks)  # type: ignore[call-arg,union-attr]
+                            resp = client.models.generate_content(
+                                model=model, contents=prompt, config=cfg
+                            )
+                        except Exception:
+                            resp = client.models.generate_content(model=model, contents=prompt)
+                    else:
+                        resp = client.models.generate_content(model=model, contents=prompt)
+                    raw = _strip_code_fences((getattr(resp, "text", None) or "").strip())
+                    return _json_loads_lenient(raw)
                 except Exception as e:
                     last_err = e
                     if _is_transient_gemini_overload(e) and attempt < 3:
@@ -296,13 +356,7 @@ class LlmClient:
                     user="\n".join([user.strip(), "", "Return JSON only. No markdown."]).strip(),
                 )
                 raw = _strip_code_fences(text.strip())
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError:
-                    start = min([i for i in [raw.find("{"), raw.find("[")] if i != -1], default=-1)
-                    if start == -1:
-                        raise
-                    return json.loads(raw[start:])
+                return _json_loads_lenient(raw)
             raise RuntimeError(str(last_err) if last_err else "Gemini request failed")
 
         # Anthropic is intentionally disabled for this project.

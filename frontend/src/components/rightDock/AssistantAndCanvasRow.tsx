@@ -1,9 +1,11 @@
 import { useCallback, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useI18n } from "../../i18n/useI18n";
 import useUiStore from "../../store/useUiStore";
 import AssistantPanel from "../AssistantPanel";
 
 export default function AssistantAndCanvasRow({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
   const { assistantDockOpen, assistantDockWidthPx, setAssistantDockWidthPx } = useUiStore(
     useShallow((s) => ({
       assistantDockOpen: s.assistantDockOpen,
@@ -47,8 +49,8 @@ export default function AssistantAndCanvasRow({ children }: { children: React.Re
           </div>
           <button
             type="button"
-            aria-label="Resize assistant panel"
-            title="Drag to resize"
+            aria-label={t("resize_aria")}
+            title={t("resize_title")}
             onMouseDown={startAssistantResize}
             className="group relative z-20 w-2 shrink-0 cursor-col-resize border-l border-r border-transparent bg-transparent hover:border-sky-300/60 hover:bg-sky-400/15 active:bg-sky-400/25"
           />

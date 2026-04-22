@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, MessageCircle, RotateCcw } from "lucide-react";
 import { combineGraphs } from "../lib/graphBranch";
 import { getBackendBase } from "../lib/backendBase";
+import { useI18n } from "../i18n/useI18n";
 import {
   availableMetrics,
   branchExtractToMeterInputs,
@@ -43,6 +44,7 @@ import { useAssistantGraphSlice, useAssistantSessionSlice, useAssistantSkillsSli
 export type { CustomSkillRow } from "./assistant/assistantTypes";
 
 export default function AssistantPanel() {
+  const { t, locale } = useI18n();
   const { mainGraph, sandboxGraph, sandboxMode, setSandboxMode, loadMainGraph, clearSandbox } = useAssistantGraphSlice();
   const { selectedNode, assistantActive, setAssistantActive, setAssistantDockOpen } = useAssistantSessionSlice();
   const { skills, toggleSkill } = useAssistantSkillsSlice();
@@ -200,11 +202,11 @@ export default function AssistantPanel() {
   const payloadSkills = useMemo(
     () =>
       customSkills.map((s) => ({
-        name: s.name.trim() || "Custom skill",
+        name: s.name.trim() || t("custom_skill"),
         instruction: s.instruction.trim(),
         enabled: s.enabled
       })),
-    [customSkills]
+    [customSkills, t, locale]
   );
 
   const builtinPayload = useMemo(
@@ -331,14 +333,14 @@ export default function AssistantPanel() {
       ...prev,
       {
         id: `s_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-        name: newSkillName.trim() || "Custom skill",
+        name: newSkillName.trim() || t("custom_skill"),
         instruction,
         enabled: true
       }
     ]);
     setNewSkillName("");
     setNewSkillBody("");
-  }, [newSkillBody, newSkillName]);
+  }, [newSkillBody, newSkillName, t]);
 
   const removeSkill = useCallback((id: string) => {
     setCustomSkills((prev) => prev.filter((s) => s.id !== id));
@@ -482,20 +484,20 @@ export default function AssistantPanel() {
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-2 py-2 dark:border-slate-800">
         <MessageCircle className="h-4 w-4 text-slate-600 dark:text-slate-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-          Assistant
+          {t("assistant_title")}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <button
             type="button"
             className="inline-flex items-center gap-0.5 rounded-lg border border-transparent px-1.5 py-1 text-[10px] font-medium text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
-            title="Hide assistant panel — full width canvas"
+            title={t("assistant_hide_title")}
             onClick={() => setAssistantDockOpen(false)}
           >
             <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
-            Hide
+            {t("assistant_hide")}
           </button>
           <button type="button" className="ios-button" onClick={deactivateAssistant}>
-            Close session
+            {t("assistant_close_session")}
           </button>
         </div>
       </div>
@@ -503,31 +505,29 @@ export default function AssistantPanel() {
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden border-b border-slate-200 p-2 dark:border-slate-800">
         <div className="mb-3 ios-card p-2">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Session
+            {t("assistant_session")}
           </div>
           <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-200">
-            Target node: <span className="font-mono">{selectedNode?.id ?? "—"}</span>
+            {t("assistant_target_node")} <span className="font-mono">{selectedNode?.id ?? "—"}</span>
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-            Sandbox is active during this session; new nodes/edges remain drafts until you apply.
-          </div>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_sandbox_hint")}</div>
           <label className="mt-2 block text-[11px] text-slate-700 dark:text-slate-200">
-            AI persona (optional)
+            {t("assistant_persona")}
             <input
               className="mt-1 ios-input py-1.5"
               value={persona}
               onChange={(e) => setPersona(e.target.value)}
-              placeholder='e.g. "Skeptical investor", "Legal counsel"'
+              placeholder={t("assistant_persona_ph")}
             />
           </label>
           {skills.webSearch && (
             <label className="mt-2 block text-[11px] text-slate-700 dark:text-slate-200">
-              Web search query (recommended)
+              {t("assistant_web_query")}
               <input
                 className="mt-1 ios-input py-1.5"
                 value={webSearchQuery}
                 onChange={(e) => setWebSearchQuery(e.target.value)}
-                placeholder='e.g. "病理AI 市场规模 2024 2025 中国"'
+                placeholder={t("assistant_web_query_ph")}
               />
             </label>
           )}
@@ -535,7 +535,7 @@ export default function AssistantPanel() {
         {sandboxHasDrafts ? (
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="text-[10px] text-slate-600 dark:text-slate-400">
-              Draft: {sandboxGraph.nodes.length} node(s), {sandboxGraph.edges.length} edge(s)
+              {t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
             </span>
             <button
               type="button"
@@ -543,7 +543,7 @@ export default function AssistantPanel() {
               onClick={discardDraft}
             >
               <RotateCcw className="h-3 w-3" />
-              Discard draft
+              {t("assistant_discard_draft")}
             </button>
           </div>
         ) : null}
@@ -558,7 +558,7 @@ export default function AssistantPanel() {
               ].join(" ")}
               onClick={() => setMode("chat")}
             >
-              Chat
+              {t("mode_chat")}
             </button>
             <button
               type="button"
@@ -568,7 +568,7 @@ export default function AssistantPanel() {
               ].join(" ")}
               onClick={() => setMode("optimism")}
             >
-              Optimism
+              {t("mode_optimism")}
             </button>
             <button
               type="button"
@@ -578,7 +578,7 @@ export default function AssistantPanel() {
               ].join(" ")}
               onClick={() => setMode("blackSwan")}
             >
-              Black swan
+              {t("mode_black_swan")}
             </button>
             <button
               type="button"
@@ -588,7 +588,7 @@ export default function AssistantPanel() {
               ].join(" ")}
               onClick={() => setMode("mece")}
             >
-              MECE
+              {t("mode_mece")}
             </button>
             <button
               type="button"
@@ -598,7 +598,7 @@ export default function AssistantPanel() {
               ].join(" ")}
               onClick={() => setMode("roundtable")}
             >
-              Roundtable
+              {t("mode_roundtable")}
             </button>
           </div>
         </div>
@@ -671,7 +671,7 @@ export default function AssistantPanel() {
         {simReport && (
           <div className="mb-3 ios-card p-3 text-[11px] text-slate-700 dark:text-slate-200">
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Simulation report
+              {t("assistant_sim_report")}
             </div>
             <pre className="whitespace-pre-wrap">{simReport}</pre>
           </div>

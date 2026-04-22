@@ -1,5 +1,6 @@
 import type { Node } from "@antv/x6";
 import { useLayoutEffect, useMemo, useRef } from "react";
+import { useI18n } from "../i18n/useI18n";
 import { REVIEW_COMMENT_COUNT_DATA_KEY } from "../lib/syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
 
@@ -30,37 +31,37 @@ function isRootHub(metadata: Record<string, unknown>) {
 }
 
 function borderClass(type?: string, isRoot?: boolean) {
-  if (isEvidenceType(type)) return "border-sky-500 dark:border-sky-400";
-  if (isRoot && isInferredType(type)) return "border-violet-600 dark:border-violet-400";
-  if (isInferredType(type)) return "border-fuchsia-500 border-dashed dark:border-fuchsia-400";
-  return "border-slate-300 dark:border-slate-600";
+  if (isEvidenceType(type)) return "border-sky-300/90 dark:border-sky-500/50";
+  if (isRoot && isInferredType(type)) return "border-violet-300/90 dark:border-violet-500/50";
+  if (isInferredType(type)) return "border-rose-300/80 border-dashed dark:border-rose-500/40";
+  return "border-stone-200/80 dark:border-stone-600/60";
 }
 
 function surfaceClass(type?: string, isRoot?: boolean) {
-  if (isEvidenceType(type)) return "bg-sky-50 dark:bg-sky-950/40";
-  if (isRoot && isInferredType(type)) return "bg-violet-50 dark:bg-violet-950/35";
-  if (isInferredType(type)) return "bg-fuchsia-50 dark:bg-fuchsia-950/30";
-  return "bg-white dark:bg-slate-900/70";
+  if (isEvidenceType(type)) return "bg-sky-50/90 dark:bg-sky-950/25";
+  if (isRoot && isInferredType(type)) return "bg-violet-50/80 dark:bg-violet-950/25";
+  if (isInferredType(type)) return "bg-rose-50/70 dark:bg-fuchsia-950/20";
+  return "bg-stone-50/90 dark:bg-stone-900/50";
 }
 
 function chipClass(type?: string, isRoot?: boolean) {
-  if (isEvidenceType(type)) return "border-sky-200 bg-sky-100/70 text-sky-900";
-  if (isRoot && isInferredType(type)) return "border-violet-200 bg-violet-100/70 text-violet-900";
-  if (isInferredType(type)) return "border-fuchsia-200 bg-fuchsia-100/70 text-fuchsia-900";
-  return "border-slate-200 bg-slate-50 text-slate-700";
+  if (isEvidenceType(type)) return "border-sky-200/80 bg-sky-100/50 text-sky-800/90";
+  if (isRoot && isInferredType(type)) return "border-violet-200/80 bg-violet-100/50 text-violet-800/90";
+  if (isInferredType(type)) return "border-rose-200/70 bg-rose-100/40 text-rose-800/85";
+  return "border-stone-200/70 bg-stone-100/50 text-stone-600";
 }
 
 function statusClass(status?: string) {
-  if (status === "conflict") return "border-red-600 ring-2 ring-red-200 dark:ring-red-900/40";
-  if (status === "unstable") return "border-amber-500 ring-2 ring-amber-100 dark:ring-amber-900/35";
-  if (status === "draft") return "border-slate-400 border-dashed dark:border-slate-500";
+  if (status === "conflict") return "border-rose-300 ring-2 ring-rose-100/80 dark:ring-rose-900/30";
+  if (status === "unstable") return "border-amber-300 ring-2 ring-amber-100/70 dark:ring-amber-900/25";
+  if (status === "draft") return "border-stone-300/80 border-dashed dark:border-stone-500/50";
   return "";
 }
 
 type CriticalPair = { label: string; value: string };
 
 /** LLM / backend: metadata.critical_values as { label, value }[] */
-function parseCriticalValues(metadata: Record<string, unknown>): CriticalPair[] {
+function parseCriticalValues(metadata: Record<string, unknown>, valueFallback: string): CriticalPair[] {
   const raw = metadata.critical_values;
   if (!Array.isArray(raw)) return [];
   const out: CriticalPair[] = [];
@@ -69,13 +70,14 @@ function parseCriticalValues(metadata: Record<string, unknown>): CriticalPair[] 
       const o = item as Record<string, unknown>;
       const label = String(o.label ?? "").trim();
       const value = String(o.value ?? "").trim();
-      if (label || value) out.push({ label: label || "Value", value });
+      if (label || value) out.push({ label: label || valueFallback, value });
     }
   }
   return out.slice(0, 8);
 }
 
 export default function MindmapReactNode(props: { node?: Node }) {
+  const { t, locale } = useI18n();
   const node = props.node;
   const data = (node?.getData() ?? {}) as Record<string, unknown>;
   const id = (data.id ?? node?.id ?? "") as string;
@@ -103,7 +105,10 @@ export default function MindmapReactNode(props: { node?: Node }) {
       ? (data[REVIEW_COMMENT_COUNT_DATA_KEY] as number)
       : 0;
   const criticalKey = JSON.stringify(metadata.critical_values ?? null);
-  const criticalPairs = useMemo(() => parseCriticalValues(metadata), [criticalKey]);
+  const criticalPairs = useMemo(
+    () => parseCriticalValues(metadata, t("node_value_fallback")),
+    [criticalKey, t, locale]
+  );
 
   const showRiskPanel =
     status === "conflict" ||
@@ -144,8 +149,8 @@ export default function MindmapReactNode(props: { node?: Node }) {
       {reviewCommentCount > 0 ? (
         <button
           type="button"
-          className="absolute -right-1 -top-1 z-10 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-1 text-[11px] shadow-sm hover:bg-amber-100 dark:border-amber-500/50 dark:bg-amber-950/40 dark:hover:bg-amber-950/60"
-          title="Reviewer comments"
+          className="absolute -right-1 -top-1 z-10 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-amber-200/70 bg-amber-50/90 px-1 text-[11px] shadow-pastel hover:bg-amber-100/80 dark:border-amber-500/35 dark:bg-amber-950/30 dark:hover:bg-amber-950/45"
+          title={t("node_reviewer_comments")}
           onClick={(e) => {
             e.stopPropagation();
             setReviewFocusNodeId(id);
@@ -153,7 +158,7 @@ export default function MindmapReactNode(props: { node?: Node }) {
           }}
         >
           <span aria-hidden>💬</span>
-          <span className="ml-0.5 font-medium text-amber-900 dark:text-amber-100">{reviewCommentCount}</span>
+          <span className="ml-0.5 font-medium text-amber-800/90 dark:text-amber-100/90">{reviewCommentCount}</span>
         </button>
       ) : null}
       <div
@@ -183,27 +188,27 @@ export default function MindmapReactNode(props: { node?: Node }) {
             className={[
               "mb-2 shrink-0 rounded-md border px-2 py-1.5 text-[10px] leading-snug",
               status === "conflict"
-                ? "border-red-400 bg-red-50 text-red-950 dark:border-red-500/60 dark:bg-red-950/40 dark:text-red-100"
-                : "border-amber-400 bg-amber-50 text-amber-950 dark:border-amber-500/60 dark:bg-amber-950/40 dark:text-amber-100"
+                ? "border-rose-300/80 bg-rose-50/90 text-rose-900/95 dark:border-rose-500/40 dark:bg-rose-950/30 dark:text-rose-100/95"
+                : "border-amber-300/70 bg-amber-50/85 text-amber-900/95 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-100/90"
             ].join(" ")}
           >
             <div
               className={
                 status === "conflict"
-                  ? "font-semibold uppercase tracking-wide text-red-800"
-                  : "font-semibold uppercase tracking-wide text-amber-900"
+                  ? "font-semibold uppercase tracking-wide text-rose-700/90"
+                  : "font-semibold uppercase tracking-wide text-amber-800/90"
               }
             >
-              {status === "conflict" ? "Logic conflict" : "Downstream risk"}
+              {status === "conflict" ? t("node_logic_conflict") : t("node_downstream_risk")}
             </div>
             {violationSummary ? (
-              <div className="mt-1 whitespace-pre-wrap break-words text-slate-900 dark:text-slate-100">
+              <div className="mt-1 whitespace-pre-wrap break-words text-stone-800 dark:text-stone-100">
                 {violationSummary}
               </div>
             ) : null}
             {upstreamConflict && status === "unstable" ? (
-              <div className="mt-1 text-[9px] text-amber-900/90">
-                <span className="font-semibold">Upstream: </span>
+              <div className="mt-1 text-[9px] text-amber-800/85">
+                <span className="font-semibold">{t("node_upstream")} </span>
                 {upstreamConflict}
               </div>
             ) : null}
@@ -211,16 +216,16 @@ export default function MindmapReactNode(props: { node?: Node }) {
               <>
                 <div
                   className={
-                    status === "conflict" ? "mt-2 font-semibold text-red-900" : "mt-2 font-semibold text-amber-950"
+                    status === "conflict" ? "mt-2 font-semibold text-rose-800/90" : "mt-2 font-semibold text-amber-900/90"
                   }
                 >
-                  Inferred consequences
+                  {t("node_inferred_consequences")}
                 </div>
                 <div
                   className={
                     status === "conflict"
-                      ? "mt-0.5 whitespace-pre-wrap break-words text-red-950/95"
-                      : "mt-0.5 whitespace-pre-wrap break-words text-amber-950/95"
+                      ? "mt-0.5 whitespace-pre-wrap break-words text-rose-900/90"
+                      : "mt-0.5 whitespace-pre-wrap break-words text-amber-900/90"
                   }
                 >
                   {inferredConsequences}
@@ -233,16 +238,16 @@ export default function MindmapReactNode(props: { node?: Node }) {
         {criticalPairs.length > 0 ? (
           <div
             ref={valuesRef}
-            className="mb-2 shrink-0 rounded-md border border-emerald-300/80 bg-emerald-50 px-2 py-1.5 dark:border-emerald-500/50 dark:bg-emerald-950/35"
+            className="mb-2 shrink-0 rounded-md border border-emerald-200/70 bg-emerald-50/80 px-2 py-1.5 dark:border-emerald-500/35 dark:bg-emerald-950/25"
           >
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-emerald-900 dark:text-emerald-100">
-              Critical data
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-emerald-800/85 dark:text-emerald-100/90">
+              {t("node_critical_data")}
             </div>
             <ul className="mt-1 list-none space-y-1.5 p-0">
               {criticalPairs.map((row, i) => (
-                <li key={i} className="text-[10px] leading-snug text-emerald-950 dark:text-emerald-50">
-                  <span className="font-semibold text-emerald-900 dark:text-emerald-100">{row.label}:</span>{" "}
-                  <span className="break-words font-medium text-emerald-950 dark:text-emerald-50">{row.value}</span>
+                <li key={i} className="text-[10px] leading-snug text-emerald-900/90 dark:text-emerald-50/95">
+                  <span className="font-semibold text-emerald-800/90 dark:text-emerald-100/90">{row.label}:</span>{" "}
+                  <span className="break-words font-medium text-emerald-900/90 dark:text-emerald-50/95">{row.value}</span>
                 </li>
               ))}
             </ul>
@@ -251,14 +256,14 @@ export default function MindmapReactNode(props: { node?: Node }) {
 
         <div
           ref={scrollRef}
-          className="min-h-0 max-h-[300px] min-w-0 flex-1 overflow-y-auto overflow-x-hidden text-xs font-semibold leading-snug text-slate-900 dark:text-slate-100"
+          className="min-h-0 max-h-[300px] min-w-0 flex-1 overflow-y-auto overflow-x-hidden text-xs font-semibold leading-snug text-stone-800 dark:text-stone-100"
         >
-          <span className="block whitespace-pre-wrap break-words">{label || "(untitled)"}</span>
+          <span className="block whitespace-pre-wrap break-words">{label || t("node_untitled")}</span>
         </div>
 
         <div
           ref={chipsRef}
-          className="mt-1 flex shrink-0 flex-wrap items-center gap-2 border-t border-black/5 pt-1 dark:border-white/10"
+          className="mt-1 flex shrink-0 flex-wrap items-center gap-2 border-t border-stone-200/50 pt-1 dark:border-white/10"
         >
           <span
             className={[
@@ -266,22 +271,24 @@ export default function MindmapReactNode(props: { node?: Node }) {
               chipClass(type, rootHub)
             ].join(" ")}
           >
-            {rootHub && isInferredType(type) ? "root · inferred" : type || "type: (none)"}
+            {rootHub && isInferredType(type) ? t("node_root_inferred") : type || t("node_type_none")}
           </span>
           {status === "conflict" ? (
-            <span className="rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">
-              conflict
+            <span className="rounded-full border border-rose-200/80 bg-rose-100/60 px-2 py-0.5 text-[10px] font-semibold text-rose-800/90">
+              {t("node_status_conflict")}
             </span>
           ) : status === "unstable" ? (
-            <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
-              affected
+            <span className="rounded-full border border-amber-200/80 bg-amber-100/60 px-2 py-0.5 text-[10px] font-semibold text-amber-800/90">
+              {t("node_status_affected")}
             </span>
           ) : (
-            <span className="text-[11px] text-slate-600 dark:text-slate-300">{status}</span>
+            <span className="text-[11px] text-stone-500 dark:text-stone-400">
+              {status === "firm" ? t("type_firm") : status === "draft" ? t("type_draft") : status}
+            </span>
           )}
           {isNewHighlighted ? (
-            <span className="rounded-full border border-lime-400 bg-lime-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-950 dark:border-lime-500/60 dark:bg-lime-950/50 dark:text-lime-100">
-              new
+            <span className="rounded-full border border-lime-300/80 bg-lime-100/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-800/90 dark:border-lime-500/40 dark:bg-lime-950/35 dark:text-lime-100/90">
+              {t("node_badge_new")}
             </span>
           ) : null}
         </div>

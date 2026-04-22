@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Graph } from "@antv/x6";
+import { Export } from "@antv/x6-plugin-export";
 import { register } from "@antv/x6-react-shape";
 import * as dagre from "dagre";
 
@@ -330,6 +331,7 @@ export default function X6Canvas(props: {
 
     // Keep a reference for cleanup and resize.
     graphRef.current = graph;
+    graph.use(new Export());
     props.onGraphReady?.(graph);
 
     // Bridge sandbox mode into graph context for X6 internals.

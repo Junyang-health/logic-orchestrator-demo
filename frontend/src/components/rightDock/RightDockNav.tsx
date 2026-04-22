@@ -1,8 +1,10 @@
 import { ChevronRight } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { useI18n } from "../../i18n/useI18n";
 import useUiStore from "../../store/useUiStore";
 
 export default function RightDockNav() {
+  const { t, locale, setLocale } = useI18n();
   const { theme, toggleTheme, setRightDockOpen, activePanel, setActivePanel } = useUiStore(
     useShallow((s) => ({
       theme: s.theme,
@@ -16,12 +18,38 @@ export default function RightDockNav() {
   return (
     <nav className="border-b ios-divider px-4 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">Appearance</div>
-        <div className="flex items-center gap-2">
+        <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">{t("nav_appearance")}</div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div
+            className="ios-segment shrink-0"
+            role="group"
+            aria-label={t("nav_language")}
+          >
+            <button
+              type="button"
+              className={[
+                "ios-segment-item px-2 py-0.5 text-[10px]",
+                locale === "en" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+              ].join(" ")}
+              onClick={() => setLocale("en")}
+            >
+              {t("nav_en")}
+            </button>
+            <button
+              type="button"
+              className={[
+                "ios-segment-item px-2 py-0.5 text-[10px]",
+                locale === "zh" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+              ].join(" ")}
+              onClick={() => setLocale("zh")}
+            >
+              {t("nav_zh")}
+            </button>
+          </div>
           <button
             type="button"
             className="ios-toggle"
-            aria-label="Toggle night mode"
+            aria-label={t("nav_toggle_night")}
             aria-pressed={theme === "dark"}
             onClick={() => toggleTheme()}
           >
@@ -35,10 +63,10 @@ export default function RightDockNav() {
             type="button"
             className="ios-button flex shrink-0 items-center gap-1 px-2 py-1 text-[10px]"
             onClick={() => setRightDockOpen(false)}
-            title="Hide panel — full width canvas"
+            title={t("nav_hide_title")}
           >
             <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-            Hide
+            {t("nav_hide")}
           </button>
         </div>
       </div>
@@ -46,22 +74,32 @@ export default function RightDockNav() {
         <button
           type="button"
           className={[
-            "ios-segment-item flex-1",
+            "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px]",
             activePanel === "source" ? "ios-segment-item-active" : "ios-segment-item-inactive"
           ].join(" ")}
           onClick={() => setActivePanel("source")}
         >
-          Source
+          {t("nav_source")}
         </button>
         <button
           type="button"
           className={[
-            "ios-segment-item flex-1",
+            "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px]",
             activePanel === "review" ? "ios-segment-item-active" : "ios-segment-item-inactive"
           ].join(" ")}
           onClick={() => setActivePanel("review")}
         >
-          Review
+          {t("nav_review")}
+        </button>
+        <button
+          type="button"
+          className={[
+            "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px]",
+            activePanel === "export" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+          ].join(" ")}
+          onClick={() => setActivePanel("export")}
+        >
+          {t("nav_export")}
         </button>
       </div>
     </nav>

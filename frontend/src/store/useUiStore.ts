@@ -5,7 +5,21 @@ import type { MindmapEdge, MindmapJson, MindmapNode } from "../types/mindmap";
 import type { ReviewComment } from "../types/review";
 import type { SourceFileEntry } from "../types/sourceMaterial";
 
-type PanelKey = "source" | "review";
+type PanelKey = "source" | "review" | "export";
+
+export type AppLocale = "en" | "zh";
+
+const LOCALE_KEY = "mindmap_locale";
+
+function readLocale(): AppLocale {
+  try {
+    const v = localStorage.getItem(LOCALE_KEY);
+    if (v === "zh" || v === "en") return v;
+  } catch {
+    /* ignore */
+  }
+  return "en";
+}
 
 export type MindmapNodePayload = {
   id: string;
@@ -120,6 +134,8 @@ type UiState = {
   setActivePanel: (panel: PanelKey) => void;
   selectedNode: MindmapNodePayload | null;
   setSelectedNode: (node: MindmapNodePayload | null) => void;
+  locale: AppLocale;
+  setLocale: (loc: AppLocale) => void;
   theme: "light" | "dark";
   setTheme: (t: "light" | "dark") => void;
   toggleTheme: () => void;
@@ -217,6 +233,15 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
   setActivePanel: (panel) => set({ activePanel: panel }),
   selectedNode: null,
   setSelectedNode: (node) => set({ selectedNode: node }),
+  locale: readLocale(),
+  setLocale: (loc) => {
+    try {
+      localStorage.setItem(LOCALE_KEY, loc);
+    } catch {
+      /* ignore */
+    }
+    set({ locale: loc });
+  },
   theme: "light",
   setTheme: (t) => set({ theme: t }),
   toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
