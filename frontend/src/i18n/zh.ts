@@ -177,6 +177,10 @@ export const zh: Record<MessageKey, string> = {
   ppt_audience: "受众",
   ppt_audience_ph: "例：高管会，非技术背景，约 20 分钟",
   ppt_pages: "目标页数（约）",
+  ppt_enrich_batch: "每批成稿页数",
+  ppt_enrich_batch_help:
+    "每轮请求同时填充的页数（1–8，与后端上限一致）。会记住在本浏览器。可选在构建时设置 VITE_PPT_ENRICH_BATCH_SIZE 作为默认。",
+  ppt_skills_persisted: "下方自定义技能会保存在本浏览器。",
   ppt_style: "附加观感（可选）",
   ppt_style_ph: "在预设之上补充：如品牌色、必用说法、或限制条件",
   ppt_skills: "技能与镜头",
@@ -190,6 +194,7 @@ export const zh: Record<MessageKey, string> = {
   ppt_err_chat: "对话优化失败。",
   ppt_err_chat_noslides: "请先生成框架，再进行对话式修改。",
   ppt_generating: "生成中…",
+  ppt_gen_cancel: "取消生成",
   ppt_generate: "生成框架",
   ppt_deck: "演示框架",
   ppt_deck_edit_hint: "可编辑每页的叙述与「视觉」规划（图形、图、表），或重排、增删页。在下方用「Refine」让模型改稿。",

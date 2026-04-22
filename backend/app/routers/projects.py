@@ -31,6 +31,9 @@ class StoredFileDto(BaseModel):
     content_type: Optional[str] = None
     size: int
     uploaded_at_ms: int
+    has_extracted_text: bool = False
+    extracted_at_ms: Optional[int] = None
+    extract_error: Optional[str] = None
 
 
 class BuildMindmapFromProjectBody(BaseModel):
@@ -68,6 +71,9 @@ def list_project_files(project_id: str):
             content_type=f.content_type,
             size=f.size,
             uploaded_at_ms=f.uploaded_at_ms,
+            has_extracted_text=bool(f.extracted_relpath),
+            extracted_at_ms=f.extracted_at_ms,
+            extract_error=f.extract_error,
         )
         for f in files
     ]
@@ -95,6 +101,40 @@ def delete_project_file(project_id: str, file_id: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     return {"ok": True}
+
+
+@router.get("/{project_id}/files/{file_id}/extracted")
+def get_project_file_extracted(project_id: str, file_id: str):
+    """Return persisted MarkItDown text for a project file (for assistants, UI, exports)."""
+    if not project_storage.project_exists(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    files = project_storage.list_files(project_id)
+    meta = next((f for f in files if f.id == file_id), None)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    md = project_storage.read_file_extracted_markdown(project_id, file_id)
+    return {
+        "filename": meta.filename,
+        "markdown": md,
+        "extracted_at_ms": meta.extracted_at_ms,
+        "extract_error": meta.extract_error,
+    }
+
+
+@router.post("/{project_id}/files/{file_id}/refresh-extraction")
+def refresh_project_file_extraction(project_id: str, file_id: str):
+    """Re-run MarkItDown on the stored file and update the sidecar."""
+    if not project_storage.project_exists(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    updated = project_storage.refresh_file_extraction(project_id=project_id, file_id=file_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    return {
+        "ok": True,
+        "has_extracted_text": bool(updated.extracted_relpath),
+        "extracted_at_ms": updated.extracted_at_ms,
+        "extract_error": updated.extract_error,
+    }
 
 
 def _strip_opt(s: Optional[str]) -> Optional[str]:
@@ -184,7 +224,15 @@ def build_mindmap_from_project(
         meta, path = project_storage.resolve_file_path(project_id=project_id, file_id=f.id)
         if not path.exists():
             continue
-        inputs.append(InputFile(filename=meta.filename, content_type=meta.content_type, content=path.read_bytes()))
+        pre = project_storage.read_file_extracted_markdown(project_id, f.id)
+        inputs.append(
+            InputFile(
+                filename=meta.filename,
+                content_type=meta.content_type,
+                content=path.read_bytes(),
+                preextracted_markdown=pre,
+            )
+        )
     if not inputs:
         raise HTTPException(status_code=400, detail="No readable files found for the chosen selection")
 

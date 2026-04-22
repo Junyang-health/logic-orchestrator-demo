@@ -173,8 +173,14 @@ def _read_project_file_excerpt(*, project_id: str, max_chars: int = 12000) -> st
             continue
         if not path.exists():
             continue
-        raw = path.read_bytes()
         fn = sf.filename or path.name
+        extracted = project_storage.read_file_extracted_markdown(project_id, sf.id)
+        if extracted and extracted.strip():
+            chunk = extracted[:8000]
+            parts.append(f"### FILE: {fn}\n{chunk}")
+            total += len(chunk)
+            continue
+        raw = path.read_bytes()
         low = fn.lower()
         chunk = ""
         try:

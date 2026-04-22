@@ -170,6 +170,10 @@ export const en = {
   ppt_audience: "Audience",
   ppt_audience_ph: "e.g. Executive committee, non-technical; 20 minutes",
   ppt_pages: "Target slide count (approx.)",
+  ppt_enrich_batch: "Enrich batch",
+  ppt_enrich_batch_help:
+    "How many slides are detailed per request (1–8). Remembered in this browser. Optional build default: VITE_PPT_ENRICH_BATCH_SIZE.",
+  ppt_skills_persisted: "Custom skills (below) are saved in this browser.",
   ppt_style: "Additional look & feel (optional)",
   ppt_style_ph: "Extra notes layered on the preset, e.g. brand colors, must-use phrases, or constraints",
   ppt_skills: "Skills & lenses",
@@ -183,6 +187,7 @@ export const en = {
   ppt_err_chat: "Refinement request failed.",
   ppt_err_chat_noslides: "Generate a framework first, then you can chat to refine it.",
   ppt_generating: "Generating…",
+  ppt_gen_cancel: "Cancel generation",
   ppt_generate: "Generate framework",
   ppt_deck: "Deck framework",
   ppt_deck_edit_hint:

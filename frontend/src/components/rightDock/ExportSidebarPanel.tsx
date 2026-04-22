@@ -10,18 +10,9 @@ import {
   buildOutgoingChildIdsByParent,
   visibleNodeIdsForTreeFilter
 } from "../../lib/mindmapTreeRows";
+import { downloadTextFile } from "../../lib/fileDownload";
 import PptFrameworkExportPanel from "./PptFrameworkExportPanel";
 import "@antv/x6-plugin-export/lib/api";
-
-function downloadTextFile(filename: string, text: string, mime: string) {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 function downloadDataUri(filename: string, dataUri: string) {
   const a = document.createElement("a");
@@ -61,7 +52,7 @@ function subtreeHasSelection(
 }
 
 export default function ExportSidebarPanel(props: { graph: Graph | null; backendBase: string }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { graph, backendBase } = props;
   const { mainGraph, sandboxGraph, theme } = useUiStore(
     useShallow((s) => ({
@@ -205,7 +196,7 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
       setError(t("export_err_jpeg_fail"));
       setBusy(false);
     }
-  }, [combined, format, graph, selectedList, theme, t, locale]);
+  }, [combined, format, graph, selectedList, theme, t]);
 
   return (
     <div className="space-y-4 text-sm text-slate-800 dark:text-slate-100">

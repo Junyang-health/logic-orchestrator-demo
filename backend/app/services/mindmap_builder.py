@@ -5,6 +5,7 @@ from typing import Optional, Sequence
 
 from app.services.excel_summary import summarize_excel
 from app.services.image_summary import summarize_image_with_claude
+from app.services.markitdown_extract import TRUNCATE_MINDMAP_CHARS, extract_bytes_to_markdown
 from app.services.mindmap_service import EvidenceItem, generate_mindmap_json, generate_mindmap_json_intent_only
 
 
@@ -13,6 +14,8 @@ class InputFile:
     filename: str
     content_type: Optional[str]
     content: bytes
+    """If set (e.g. from persisted MarkItDown sidecar), skip re-extracting in memory."""
+    preextracted_markdown: Optional[str] = None
 
 
 def _is_excel(filename: str, content_type: Optional[str]) -> bool:
@@ -70,6 +73,23 @@ def _pdf_page_snippets(*, filename: str, content: bytes, max_pages: int = 25) ->
     return items
 
 
+def _append_markdown_to_summaries(
+    *,
+    name: str,
+    md: str,
+    summaries: list[str],
+    evidence: list[EvidenceItem],
+) -> None:
+    t = md if len(md) <= TRUNCATE_MINDMAP_CHARS else md[: TRUNCATE_MINDMAP_CHARS - 1] + "…(truncated)"
+    summaries.append(f"File: {name} (markdown extract)\n{t}")
+    compact = " ".join(t.split())
+    step = 450
+    for i in range(0, min(len(compact), 1800), step):
+        sn = compact[i : i + step]
+        if sn.strip():
+            evidence.append(EvidenceItem(filename=name, snippet=sn[:420]))
+
+
 def build_mindmap_from_files(*, llm, files: Sequence[InputFile], intent: Optional[str] = None):
     summaries: list[str] = []
     evidence: list[EvidenceItem] = []
@@ -82,6 +102,18 @@ def build_mindmap_from_files(*, llm, files: Sequence[InputFile], intent: Optiona
         name = f.filename or "uploaded"
         ct = f.content_type
         data = f.content
+
+        if f.preextracted_markdown and f.preextracted_markdown.strip():
+            _append_markdown_to_summaries(
+                name=name, md=f.preextracted_markdown.strip(), summaries=summaries, evidence=evidence
+            )
+            continue
+
+        md_try, _md_err = extract_bytes_to_markdown(name, data, truncate=TRUNCATE_MINDMAP_CHARS)
+        substantial = bool(md_try and len(md_try.strip()) > 0)
+        if substantial and (not _is_image(name, ct) or len(md_try.strip()) > 200):
+            _append_markdown_to_summaries(name=name, md=md_try or "", summaries=summaries, evidence=evidence)
+            continue
 
         if _is_excel(name, ct):
             xl = summarize_excel(filename=name, content=data)

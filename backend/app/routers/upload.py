@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.services.llm_client import LlmClient
 from app.services import project_storage
+from app.services.markitdown_extract import TRUNCATE_API_CHARS, extract_bytes_to_markdown
 from app.services.mindmap_builder import InputFile, build_mindmap_from_files, build_mindmap_from_intent_only
 
 router = APIRouter()
@@ -77,6 +78,23 @@ async def upload(
 async def mindmap(files: List[UploadFile] = File(...)):
     # Alias for frontend compatibility: same behavior as POST /upload
     return await upload(files=files)
+
+
+@router.post("/source/extract-text")
+async def source_extract_text(files: List[UploadFile] = File(...)):
+    """
+    Convert uploaded files to Markdown (MarkItDown) for PPT / client-side consumers.
+    Does not persist; use project file storage + GET .../extracted for saved text.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    snippets: list[dict[str, str | None]] = []
+    for f in files:
+        name = f.filename or "uploaded"
+        data = await f.read()
+        md, err = extract_bytes_to_markdown(name, data, truncate=TRUNCATE_API_CHARS)
+        snippets.append({"filename": name, "markdown": md, "error": err})
+    return {"snippets": snippets}
 
 
 @router.get("/mindmap")
