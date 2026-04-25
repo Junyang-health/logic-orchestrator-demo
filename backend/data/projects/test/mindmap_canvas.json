@@ -1,5 +1,5 @@
 {
-  "updated_at_ms": 1776491185894,
+  "updated_at_ms": 1776839152664,
   "nodes": [
     {
       "id": "root",
@@ -298,6 +298,82 @@
         "critical_values": []
       },
       "status": "firm"
+    },
+    {
+      "id": "rev_bs1_scenario",
+      "label": "开源模型性能意外超越商用闭源模型",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_bs1_impact1",
+      "label": "RuiPath授权模式收入基础被侵蚀",
+      "type": "evidence",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "商业情况：2025年6月部分开源（架构+数据集），权重需学术申请开源版本提供了基础的特征提取能力和预训练权重，供科研人员复现和改进；院内临床版未开源，仅内部使用；商用（需授权），华为云服务 / 医院定制。",
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_bs1_impact2",
+      "label": "DeepGEM技术优势与商业价值贬损",
+      "type": "evidence",
+      "metadata": {
+        "source_filename": "国内病理大模型(1).pdf",
+        "text_snippet": "3. DeepGEM 发布单位：广州医科大学附属第一医院联合腾讯、金域医学 发布时间：2025年10月落地部署 商业情况：未开源，商业产品（腾讯医疗 AI 实验室是核心技术方，腾讯已与金域医学达成战略合作，通过金域的渠道进行商业化落地。）",
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_bs1_impact3",
+      "label": "核心商业化逻辑失效，授权与分成收入枯竭",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_m1",
+      "label": "向“开源核心+高级服务/数据”模式转型",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_m1_detail",
+      "label": "重点转向专业服务、独家数据集、深度集成方案",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_m2",
+      "label": "构建临床工作流深度集成与专属数据壁垒",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
+    },
+    {
+      "id": "rev_m2_detail",
+      "label": "嵌入临床路径积累专病数据，形成使用粘性与持续优化",
+      "type": "inferred",
+      "metadata": {
+        "critical_values": []
+      },
+      "status": "firm"
     }
   ],
   "edges": [
@@ -461,6 +537,66 @@
       "source": "rev_tam",
       "target": "rev_evidence_tam",
       "label": "依据",
+      "status": "firm"
+    },
+    {
+      "source": "n8",
+      "target": "rev_bs1_scenario",
+      "label": "风险场景",
+      "status": "firm"
+    },
+    {
+      "source": "rev_bs1_scenario",
+      "target": "rev_bs1_impact1",
+      "label": "关键影响",
+      "status": "firm"
+    },
+    {
+      "source": "rev_bs1_scenario",
+      "target": "rev_bs1_impact2",
+      "label": "关键影响",
+      "status": "firm"
+    },
+    {
+      "source": "rev_bs1_scenario",
+      "target": "rev_bs1_impact3",
+      "label": "关键影响",
+      "status": "firm"
+    },
+    {
+      "source": "rev_bs1_scenario",
+      "target": "rev_m1",
+      "label": "缓解措施",
+      "status": "firm"
+    },
+    {
+      "source": "rev_m1",
+      "target": "rev_m1_detail",
+      "label": "具体行动",
+      "status": "firm"
+    },
+    {
+      "source": "rev_m1",
+      "target": "e2",
+      "label": "关联现状",
+      "status": "firm"
+    },
+    {
+      "source": "rev_bs1_scenario",
+      "target": "rev_m2",
+      "label": "缓解措施",
+      "status": "firm"
+    },
+    {
+      "source": "rev_m2",
+      "target": "rev_m2_detail",
+      "label": "具体行动",
+      "status": "firm"
+    },
+    {
+      "source": "rev_m2",
+      "target": "e4",
+      "label": "关联现状",
       "status": "firm"
     }
   ]

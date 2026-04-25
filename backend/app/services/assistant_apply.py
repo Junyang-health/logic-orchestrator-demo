@@ -19,6 +19,7 @@ Schema:
 
 Rules:
 - Types ONLY "Evidence" or "Inferred".
+- When "Project source material" is present in this prompt, ground new Evidence nodes using real filenames and text_snippet quotes from that section when possible.
 - For EVERY Evidence node (new or updated), metadata MUST include source_filename and text_snippet. Reuse real filenames from the branch when grounded there; otherwise use source_filename "assistant_notes.txt" and a short honest text_snippet.
 - update_nodes: only ids in the branch you were given. Include only nodes you actually change.
 - add_nodes: every new id MUST start with "rev_" and be unique. Prefer Inferred nodes for structure; use Evidence when citing or grounding claims.
@@ -96,6 +97,7 @@ def build_assistant_apply_user_prompt(
     custom_skills: list[dict[str, Any]],
     builtin_skills: dict[str, bool],
     sandbox_mode: bool = False,
+    source_context: str | None = None,
 ) -> str:
     node_lines = []
     for n in branch_nodes:
@@ -114,6 +116,14 @@ def build_assistant_apply_user_prompt(
     if extra:
         head.extend([extra, ""])
 
+    source_block: list[str] = []
+    if (source_context or "").strip():
+        source_block = [
+            "Project source material (extracted from project uploads; may be truncated):",
+            source_context.strip(),
+            "",
+        ]
+
     return "\n".join(
         [
             *head,
@@ -126,6 +136,7 @@ def build_assistant_apply_user_prompt(
             "Branch edges (parent -> child):",
             *edge_lines,
             "",
+            *source_block,
             "Conversation (most recent context matters):",
             _format_conversation(messages),
             "",
@@ -137,6 +148,8 @@ def build_assistant_apply_user_prompt(
 CHAT_SYSTEM = """You are a helpful assistant for editing a strategic / argument mindmap.
 
 You see a snapshot of the current graph (nodes and edges), optional focus node, and optional skill instructions.
+If a section "Project source material" appears, it is extracted text from the user's uploaded project files
+(may be truncated). Ground factual claims in that text when the user asks about sources; name files from ### FILE: headers.
 Reply in clear, concise prose. You may propose concrete edits, but the user applies them via a separate action.
 When suggesting structural changes, mention node ids from the snapshot when possible.
 
@@ -160,6 +173,7 @@ def build_assistant_chat_user_prompt(
     custom_skills: list[dict[str, Any]],
     builtin_skills: dict[str, bool],
     sandbox_mode: bool = False,
+    source_context: str | None = None,
 ) -> str:
     node_lines = []
     for n in full_nodes[:400]:
@@ -182,6 +196,14 @@ def build_assistant_chat_user_prompt(
         else "Workspace: MAIN — graph edits go to the firm map unless the UI is in sandbox mode."
     )
 
+    source_block: list[str] = []
+    if (source_context or "").strip():
+        source_block = [
+            "Project source material (extracted from project uploads; may be truncated):",
+            source_context.strip(),
+            "",
+        ]
+
     return "\n".join(
         [
             focus_line,
@@ -196,6 +218,7 @@ def build_assistant_chat_user_prompt(
             "Edges (source -> target):",
             *edge_lines,
             "",
+            *source_block,
             "Conversation so far (respond to the latest user message):",
             _format_conversation(messages, max_chars=16000),
             "",
@@ -214,6 +237,7 @@ def apply_assistant_conversation_to_graph(
     custom_skills: list[dict[str, Any]],
     builtin_skills: dict[str, bool],
     sandbox_mode: bool = False,
+    source_context: str | None = None,
 ) -> dict[str, Any]:
     all_ids = {str(n["id"]) for n in full_nodes if isinstance(n, dict) and n.get("id")}
     edges_raw = [e for e in full_edges if isinstance(e, dict)]
@@ -234,6 +258,7 @@ def apply_assistant_conversation_to_graph(
         custom_skills=custom_skills,
         builtin_skills=builtin_skills,
         sandbox_mode=sandbox_mode,
+        source_context=source_context,
     )
     data = llm.generate_json(system=ASSISTANT_APPLY_SYSTEM, user=user_prompt)
     if not isinstance(data, dict):
@@ -261,6 +286,7 @@ def run_assistant_chat(
     custom_skills: list[dict[str, Any]],
     builtin_skills: dict[str, bool],
     sandbox_mode: bool = False,
+    source_context: str | None = None,
 ) -> str:
     user_prompt = build_assistant_chat_user_prompt(
         full_nodes=full_nodes,
@@ -270,6 +296,7 @@ def run_assistant_chat(
         custom_skills=custom_skills,
         builtin_skills=builtin_skills,
         sandbox_mode=sandbox_mode,
+        source_context=source_context,
     )
     if builtin_skills.get("webSearch"):
         q = (web_search_query or "").strip()

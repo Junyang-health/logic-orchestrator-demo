@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Graph } from "@antv/x6";
 import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../../i18n/useI18n";
+import { addChildToParent, removeNodeFromGraph } from "../../lib/mindmapCanvasOps";
 import useUiStore from "../../store/useUiStore";
 import SourceMaterialPanel from "../SourceMaterialPanel";
 
@@ -27,8 +28,10 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
   const [newChildType, setNewChildType] = useState("inferred");
   const [newChildLabel, setNewChildLabel] = useState("");
   const [newEdgeLabel, setNewEdgeLabel] = useState("supports");
-  const [moveMode, setMoveMode] = useState(false);
-  const [movingNodeId, setMovingNodeId] = useState<string | null>(null);
+
+  const reparentingNodeId = useUiStore((s) => s.reparentingNodeId);
+  const startReparent = useUiStore((s) => s.startReparent);
+  const clearReparent = useUiStore((s) => s.clearReparent);
 
   const refreshModels = useCallback(async () => {
     try {
@@ -132,48 +135,11 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
     if (!graph) return;
     const sel = useUiStore.getState().selectedNode;
     if (!sel?.id) return;
-
-    const parent = graph.getCellById(sel.id);
-    if (!parent || !parent.isNode()) return;
-
-    const id = `n_${Math.random().toString(16).slice(2, 10)}`;
-    const isSandbox = Boolean((graph as any).prop?.("sandboxContext"));
-    const status = isSandbox ? "draft" : "firm";
-    const label = (newChildLabel.trim() || t("new_node_default")).slice(0, 120);
-    const raw = (newChildType || "inferred").toLowerCase();
-    const type = raw === "evidence" ? "evidence" : "inferred";
-
-    const p = (parent as any).position?.() || { x: 0, y: 0 };
-    const node = graph.addNode({
-      id,
-      shape: "mindmap-react-node",
-      width: 280,
-      height: 96,
-      x: p.x + 260,
-      y: p.y,
-      data: { id, type, label, metadata: {}, status }
+    addChildToParent(graph, sel.id, {
+      typeRaw: newChildType,
+      label: (newChildLabel.trim() || t("new_node_default")).slice(0, 120),
+      edgeLabel: newEdgeLabel.trim()
     });
-
-    graph.addEdge({
-      source: sel.id,
-      target: node.id,
-      labels: newEdgeLabel.trim()
-        ? [
-            {
-              attrs: { label: { text: newEdgeLabel.trim(), fill: isSandbox ? "#64748b" : "#0f172a", fontSize: 11 } }
-            }
-          ]
-        : undefined,
-      attrs: {
-        line: {
-          stroke: isSandbox ? "#94a3b8" : "#0f172a",
-          strokeWidth: 1.5,
-          strokeDasharray: isSandbox ? "6 4" : ""
-        }
-      },
-      data: { status, label: newEdgeLabel.trim() }
-    });
-
     setNewChildLabel("");
   }, [graph, newChildLabel, newChildType, newEdgeLabel, t]);
 
@@ -181,80 +147,14 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
     if (!graph) return;
     const sel = useUiStore.getState().selectedNode;
     if (!sel?.id) return;
-    const cell = graph.getCellById(sel.id);
-    if (!cell || !cell.isNode()) return;
-    graph.removeCell(cell);
-    useUiStore.getState().setReviewFocusNodeId(null);
-    useUiStore.getState().setSelectedNode(null);
+    removeNodeFromGraph(graph, sel.id);
   }, [graph]);
 
   const startMoveSelected = useCallback(() => {
     const sel = useUiStore.getState().selectedNode;
     if (!sel?.id) return;
-    setMoveMode(true);
-    setMovingNodeId(sel.id);
-  }, []);
-
-  const cancelMove = useCallback(() => {
-    setMoveMode(false);
-    setMovingNodeId(null);
-  }, []);
-
-  const attachMovingNodeTo = useCallback(
-    (newParentId: string) => {
-      if (!graph) return;
-      const childId = movingNodeId;
-      if (!childId || !newParentId || childId === newParentId) return;
-      const child = graph.getCellById(childId);
-      const parent = graph.getCellById(newParentId);
-      if (!child || !child.isNode() || !parent || !parent.isNode()) return;
-
-      const incoming = graph
-        .getEdges()
-        .filter((e) => e.getTargetCellId() === childId)
-        .slice();
-      for (const e of incoming) {
-        graph.removeEdge(e);
-      }
-
-      const isSandbox = Boolean((graph as any).prop?.("sandboxContext"));
-      const status = isSandbox ? "draft" : "firm";
-      const relationship = (newEdgeLabel.trim() || "supports").trim();
-
-      graph.addEdge({
-        source: newParentId,
-        target: childId,
-        labels: relationship
-          ? [
-              {
-                attrs: { label: { text: relationship, fill: isSandbox ? "#64748b" : "#0f172a", fontSize: 11 } }
-              }
-            ]
-          : undefined,
-        attrs: {
-          line: {
-            stroke: isSandbox ? "#94a3b8" : "#0f172a",
-            strokeWidth: 1.5,
-            strokeDasharray: isSandbox ? "6 4" : ""
-          }
-        },
-        data: { status, label: relationship }
-      });
-
-      setMoveMode(false);
-      setMovingNodeId(null);
-    },
-    [graph, movingNodeId, newEdgeLabel]
-  );
-
-  useEffect(() => {
-    if (!moveMode || !movingNodeId) return;
-    if (!selectedNode?.id) return;
-    const newParentId = selectedNode.id;
-    if (newParentId === movingNodeId) return;
-    attachMovingNodeTo(newParentId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moveMode, movingNodeId, selectedNode?.id]);
+    startReparent(sel.id, (newEdgeLabel || "supports").trim());
+  }, [newEdgeLabel, startReparent]);
 
   return (
     <div className="space-y-3">
@@ -267,13 +167,13 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
             <div className="text-[11px] text-slate-600 dark:text-slate-300">
               {t("source_selected")} <span className="font-mono">{selectedNode.id}</span>
             </div>
-            {moveMode && movingNodeId ? (
+            {reparentingNodeId ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-900">
                 {t("source_move_mode")}
                 <div className="mt-1 font-mono">
-                  {t("source_moving")} {movingNodeId}
+                  {t("source_moving")} {reparentingNodeId}
                 </div>
-                <button type="button" className="mt-2 ios-button" onClick={() => cancelMove()}>
+                <button type="button" className="mt-2 ios-button" onClick={() => clearReparent()}>
                   {t("source_cancel_move")}
                 </button>
               </div>

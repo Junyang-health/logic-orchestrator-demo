@@ -7,7 +7,7 @@ from app.services.assistant_apply import ASSISTANT_APPLY_SYSTEM, _sandbox_apply_
 from app.services.llm_client import LlmClient
 from app.services.review_apply import collect_branch_node_ids, merge_review_patch
 
-ROUNDTABLE_ROUND_SYSTEM = """You simulate a roundtable where several personas discuss ONE selected mindmap node.
+ROUNDTABLE_ROUND_SYSTEM = """You simulate a roundtable where several personas discuss the mindmap **subtree** rooted at the selected node (that node plus all downstream children along parent→child edges, as given in the graph context).
 Return JSON only. No markdown fences.
 
 Schema:
@@ -20,7 +20,7 @@ Schema:
 
 Rules:
 - You will receive the persona list IN ORDER. Emit exactly one speech per persona, in the SAME order. persona field must match the given name exactly.
-- Each speech: 2–6 sentences in that persona's voice per their instruction. Focus on the selected node's label, type, metadata, and how it fits the surrounding map. If little to add, still give 1–2 sentences (agree, pass, or one concrete angle).
+- Each speech: 2–6 sentences in that persona's voice per their instruction. Consider the **whole subtree** — labels, types, metadata, and internal edges — not only the root node. If little to add, still give 1–2 sentences (agree, pass, or one concrete angle).
 - Do NOT propose JSON graph patches here; discussion only.
 - If a user steering message is present, incorporate it as the topic for this round.
 """
@@ -63,40 +63,59 @@ def _node_snapshot(nodes: list[dict[str, Any]], node_id: str) -> str:
     return f"(node id {node_id!r} not found in snapshot)"
 
 
-def _compact_graph_context(
+def _subtree_graph_context(
     *,
     full_nodes: list[dict[str, Any]],
     full_edges: list[dict[str, Any]],
     selected_node_id: str,
-    max_nodes: int = 48,
+    max_node_lines: int = 64,
 ) -> str:
-    """Short neighbor context: selected node + labels of linked nodes."""
+    """All nodes and internal edges in the branch rooted at `selected_node_id` (source→target = parent→child)."""
+    root = (selected_node_id or "").strip()
+    if not root:
+        return "(no selected id)"
+    all_ids = {str(n["id"]) for n in full_nodes if isinstance(n, dict) and n.get("id")}
+    edges_raw = [e for e in full_edges if isinstance(e, dict)]
+    branch_ids = collect_branch_node_ids(root_id=root, edges=edges_raw, all_ids=all_ids)
+    if not branch_ids:
+        return "(selected node missing in graph or no subtree)"
     by_id: dict[str, dict[str, Any]] = {}
     for n in full_nodes:
         if isinstance(n, dict) and str(n.get("id") or "").strip():
             by_id[str(n["id"])] = n
-    sel = by_id.get(selected_node_id)
-    if not sel:
-        return "(selected node missing)"
-    neighbors: list[str] = []
-    for e in full_edges:
-        if not isinstance(e, dict):
+    node_lines: list[str] = []
+    for i, nid in enumerate(sorted(branch_ids)):
+        if i >= max_node_lines:
+            rest = max(0, len(branch_ids) - max_node_lines)
+            node_lines.append(f"... and {rest} more node(s) in subtree (omitted to save space).")
+            break
+        n = by_id.get(nid)
+        if not n:
+            node_lines.append(f"- id={nid!r} (details missing in snapshot)")
             continue
+        meta = n.get("metadata")
+        meta_s = json.dumps(meta, ensure_ascii=False) if meta is not None else "{}"
+        node_lines.append(
+            f"- id={nid!s} type={n.get('type')!r} label={n.get('label')!r} metadata={meta_s[:1000]}"
+        )
+    edge_lines: list[str] = []
+    for e in edges_raw:
         s, t = str(e.get("source", "")), str(e.get("target", ""))
-        lab = str(e.get("label") or "")
-        if s == selected_node_id and t in by_id:
-            neighbors.append(f"out→ {by_id[t].get('label')!s} [{t}] ({lab})")
-        elif t == selected_node_id and s in by_id:
-            neighbors.append(f"in← {by_id[s].get('label')!s} [{s}] ({lab})")
-    lines = [
-        f"SELECTED id={selected_node_id}",
-        f"label={sel.get('label')!r} type={sel.get('type')!r}",
-        f"metadata={json.dumps(sel.get('metadata'), ensure_ascii=False)[:1200]}",
-        "",
-        "Local links:",
-        *(neighbors[:max_nodes] or ["(none)"]),
-    ]
-    return "\n".join(lines)
+        if s in branch_ids and t in branch_ids:
+            edge_lines.append(
+                f"- {s} -> {t} label={e.get('label')!r}"
+            )
+    return "\n".join(
+        [
+            f"Subtrees rooted at selected id {root!r} — {len(branch_ids)} node(s) total, directed downstream only.",
+            "",
+            f"Nodes (subtree, up to {max_node_lines} lines):",
+            *node_lines,
+            "",
+            "Edges within this subtree (parent -> child):",
+            *(edge_lines or ["(none)"]),
+        ]
+    )
 
 
 def run_roundtable_round(
@@ -143,14 +162,14 @@ def run_roundtable_round(
             sandbox_note + "Personas (speak in order):",
             persona_block,
             "",
-            "Graph context (selected + local links):",
-            _compact_graph_context(
+            "Graph context (selected node and ALL descendant nodes in its subtree, same scope as Propose / Apply):",
+            _subtree_graph_context(
                 full_nodes=full_nodes,
                 full_edges=full_edges,
                 selected_node_id=selected_node_id.strip(),
             ),
             "",
-            "Full selected node JSON:",
+            "Selected (root) node JSON (anchor for the round):",
             _node_snapshot(full_nodes, selected_node_id.strip()),
             "",
             "Prior transcript:",

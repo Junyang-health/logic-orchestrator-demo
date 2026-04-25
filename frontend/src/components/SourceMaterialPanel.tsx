@@ -6,6 +6,14 @@ import { combineGraphs } from "../lib/graphBranch";
 import { classifySourceKind } from "../types/sourceMaterial";
 import type { MindmapJson } from "../types/mindmap";
 
+/**
+ * When the right dock is hidden, `AppRightDock` unmounts. On show, this panel remounts and the
+ * projectId effect would run again — refetching `/mindmap/canvas` and `loadMainGraph` while X6
+ * still holds the live graph, which races the react-shape layer and shows stacked duplicate nodes.
+ * We only auto-fetch when the project id actually changes, not on every remount.
+ */
+let lastAutoFetchedCanvasProjectId: string | null = null;
+
 type Project = { id: string; name: string };
 type StoredFile = { id: string; filename: string; size: number; content_type?: string | null; uploaded_at_ms: number };
 
@@ -116,6 +124,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         setSandboxMode(false);
         useUiStore.getState().setSelectedNode(null);
       }
+      lastAutoFetchedCanvasProjectId = projectId;
     } catch {
       setSavedCanvasUpdatedMs(null);
     }
@@ -191,7 +200,15 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   useEffect(() => {
     if (!projectId) return;
     localStorage.setItem("mindmap_project_id", projectId);
+    try {
+      window.dispatchEvent(new CustomEvent("mindmap:projectId", { detail: { projectId } }));
+    } catch {
+      /* ignore */
+    }
     refreshStoredFiles().catch(() => {});
+    if (lastAutoFetchedCanvasProjectId === projectId) {
+      return;
+    }
     fetchAndApplySavedCanvas().catch(() => {});
   }, [projectId, refreshStoredFiles, fetchAndApplySavedCanvas]);
 

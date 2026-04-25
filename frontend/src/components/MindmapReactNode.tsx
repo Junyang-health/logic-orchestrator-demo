@@ -1,6 +1,10 @@
-import type { Node } from "@antv/x6";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import type { Graph, Node } from "@antv/x6";
+import { ChevronDown, ChevronRight, MessageCircle, MoveRight, Plus, Trash2 } from "lucide-react";
+import { useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { useI18n } from "../i18n/useI18n";
+import { combineGraphs } from "../lib/graphBranch";
+import { addChildToParent, removeNodeFromGraph } from "../lib/mindmapCanvasOps";
+import { countDescendantNodes } from "../lib/mindmapCollapse";
 import { REVIEW_COMMENT_COUNT_DATA_KEY } from "../lib/syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
 
@@ -30,31 +34,15 @@ function isRootHub(metadata: Record<string, unknown>) {
   return v === true || v === "true" || v === 1;
 }
 
-function borderClass(type?: string, isRoot?: boolean) {
-  if (isEvidenceType(type)) return "border-sky-300/90 dark:border-sky-500/50";
-  if (isRoot && isInferredType(type)) return "border-violet-300/90 dark:border-violet-500/50";
-  if (isInferredType(type)) return "border-rose-300/80 border-dashed dark:border-rose-500/40";
-  return "border-stone-200/80 dark:border-stone-600/60";
+function nodeSurfaceClass(type?: string) {
+  return isEvidenceType(type) ? "mm-node-surface-evidence" : "mm-node-surface-inferred";
 }
 
-function surfaceClass(type?: string, isRoot?: boolean) {
-  if (isEvidenceType(type)) return "bg-sky-50/90 dark:bg-sky-950/25";
-  if (isRoot && isInferredType(type)) return "bg-violet-50/80 dark:bg-violet-950/25";
-  if (isInferredType(type)) return "bg-rose-50/70 dark:bg-fuchsia-950/20";
-  return "bg-stone-50/90 dark:bg-stone-900/50";
-}
-
-function chipClass(type?: string, isRoot?: boolean) {
-  if (isEvidenceType(type)) return "border-sky-200/80 bg-sky-100/50 text-sky-800/90";
-  if (isRoot && isInferredType(type)) return "border-violet-200/80 bg-violet-100/50 text-violet-800/90";
-  if (isInferredType(type)) return "border-rose-200/70 bg-rose-100/40 text-rose-800/85";
-  return "border-stone-200/70 bg-stone-100/50 text-stone-600";
-}
-
-function statusClass(status?: string) {
-  if (status === "conflict") return "border-rose-300 ring-2 ring-rose-100/80 dark:ring-rose-900/30";
-  if (status === "unstable") return "border-amber-300 ring-2 ring-amber-100/70 dark:ring-amber-900/25";
-  if (status === "draft") return "border-stone-300/80 border-dashed dark:border-stone-500/50";
+/** Status rings on top of evidence vs inferred fill. */
+function nodeStatusRing(status?: string) {
+  if (status === "conflict") return "ring-2 ring-rose-200/90 dark:ring-rose-400/60";
+  if (status === "unstable") return "ring-2 ring-amber-200/80 dark:ring-amber-400/55";
+  if (status === "draft") return "ring-1 ring-dashed ring-white/50";
   return "";
 }
 
@@ -76,19 +64,32 @@ function parseCriticalValues(metadata: Record<string, unknown>, valueFallback: s
   return out.slice(0, 8);
 }
 
-export default function MindmapReactNode(props: { node?: Node }) {
+/**
+ * x6-react-shape's `Wrap` injects `graph` and `node` via cloneElement.
+ * Node views are rendered through a React portal, so React context from the app root does not reach here — use `props.graph`.
+ */
+export default function MindmapReactNode(props: { node?: Node; graph?: Graph | null }) {
   const { t, locale } = useI18n();
   const node = props.node;
+  /** Live X6 graph instance (injected by @antv/x6-react-shape). */
+  const graph = props.graph ?? null;
   const data = (node?.getData() ?? {}) as Record<string, unknown>;
   const id = (data.id ?? node?.id ?? "") as string;
-
   const setSelectedNode = useUiStore((s) => s.setSelectedNode);
   const setActivePanel = useUiStore((s) => s.setActivePanel);
   const setReviewFocusNodeId = useUiStore((s) => s.setReviewFocusNodeId);
+  const mainGraph = useUiStore((s) => s.mainGraph);
+  const sandboxGraph = useUiStore((s) => s.sandboxGraph);
+  const collapsedSubtreeRootIds = useUiStore((s) => s.collapsedSubtreeRootIds);
+  const toggleCollapsedSubtree = useUiStore((s) => s.toggleCollapsedSubtree);
   const isNewHighlighted = useUiStore((s) => Boolean(id && s.newMarkedNodeIds[id]));
+  const reparentingNodeId = useUiStore((s) => s.reparentingNodeId);
+  const startReparent = useUiStore((s) => s.startReparent);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
+  const subtreeRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const riskRef = useRef<HTMLDivElement>(null);
   const valuesRef = useRef<HTMLDivElement>(null);
 
@@ -100,6 +101,70 @@ export default function MindmapReactNode(props: { node?: Node }) {
   const violationSummary = (data.violation_summary ?? "").toString().trim();
   const inferredConsequences = (data.inferred_consequences ?? "").toString().trim();
   const upstreamConflict = (data.upstream_conflict_summary ?? "").toString().trim();
+
+  const openAssistantForBranch = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setSelectedNode({
+        id,
+        type,
+        label,
+        metadata,
+        violation_summary: violationSummary || undefined,
+        inferred_consequences: inferredConsequences || undefined
+      });
+      const st = useUiStore.getState();
+      st.setAssistantActive(true);
+      st.setSandboxMode(true);
+      st.setAssistantOverlayOpen(true);
+    },
+    [id, type, label, metadata, violationSummary, inferredConsequences, setSelectedNode]
+  );
+
+  const selectPayload = useCallback(
+    () => ({
+      id,
+      type,
+      label,
+      metadata,
+      violation_summary: violationSummary || undefined,
+      inferred_consequences: inferredConsequences || undefined
+    }),
+    [id, type, label, metadata, violationSummary, inferredConsequences]
+  );
+
+  const onAddChild = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!graph) return;
+      addChildToParent(graph, id, {
+        typeRaw: "inferred",
+        label: t("new_node_default"),
+        edgeLabel: "supports"
+      });
+    },
+    [graph, id, t]
+  );
+
+  const onMoveReparent = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setSelectedNode(selectPayload());
+      startReparent(id, "supports");
+    },
+    [id, selectPayload, setSelectedNode, startReparent]
+  );
+
+  const onDeleteNode = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!graph) return;
+      if (!window.confirm(t("node_delete_confirm"))) return;
+      removeNodeFromGraph(graph, id);
+    },
+    [graph, id, t]
+  );
+
   const reviewCommentCount =
     typeof data[REVIEW_COMMENT_COUNT_DATA_KEY] === "number"
       ? (data[REVIEW_COMMENT_COUNT_DATA_KEY] as number)
@@ -108,6 +173,20 @@ export default function MindmapReactNode(props: { node?: Node }) {
   const criticalPairs = useMemo(
     () => parseCriticalValues(metadata, t("node_value_fallback")),
     [criticalKey, t, locale]
+  );
+
+  const combinedEdges = useMemo(
+    () => combineGraphs(mainGraph, sandboxGraph).edges,
+    [mainGraph, sandboxGraph]
+  );
+  const hasOutgoingChildren = useMemo(
+    () => (id ? combinedEdges.some((e) => e.source === id) : false),
+    [combinedEdges, id]
+  );
+  const isSubtreeCollapsed = Boolean(id && collapsedSubtreeRootIds.includes(id));
+  const hiddenDescendantCount = useMemo(
+    () => (isSubtreeCollapsed && id ? countDescendantNodes(id, combinedEdges) : 0),
+    [isSubtreeCollapsed, id, combinedEdges]
   );
 
   const showRiskPanel =
@@ -121,10 +200,15 @@ export default function MindmapReactNode(props: { node?: Node }) {
     const riskH = riskRef.current?.offsetHeight ?? 0;
     const valuesH = valuesRef.current?.offsetHeight ?? 0;
     const chipsH = chipsRef.current?.offsetHeight ?? 28;
+    const subtreeH = subtreeRef.current?.offsetHeight ?? 0;
+    const actionsH = actionsRef.current?.offsetHeight ?? 0;
     const rawLabelH = scrollRef.current?.scrollHeight ?? 0;
     const labelViewport = Math.min(LABEL_VIEWPORT_MAX, Math.max(36, rawLabelH));
     const verticalPad = 18;
-    const nextH = Math.min(520, Math.max(96, riskH + valuesH + labelViewport + chipsH + verticalPad));
+    const nextH = Math.min(
+      520,
+      Math.max(96, riskH + valuesH + labelViewport + chipsH + subtreeH + actionsH + verticalPad)
+    );
     const cur = n.getSize();
     if (Math.abs(cur.height - nextH) > 2 || Math.abs(cur.width - NODE_W) > 2) {
       n.resize(NODE_W, nextH);
@@ -141,15 +225,28 @@ export default function MindmapReactNode(props: { node?: Node }) {
     showRiskPanel,
     criticalPairs.length,
     reviewCommentCount,
-    isNewHighlighted
+    isNewHighlighted,
+    reparentingNodeId,
+    hasOutgoingChildren,
+    isSubtreeCollapsed,
+    hiddenDescendantCount
   ]);
 
   return (
     <div className="relative h-full w-full">
+      <button
+        type="button"
+        className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/35 bg-white/20 text-white shadow-pastel hover:bg-white/30"
+        title={t("node_assistant_open")}
+        onClick={openAssistantForBranch}
+        aria-label={t("node_assistant_open")}
+      >
+        <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.25} />
+      </button>
       {reviewCommentCount > 0 ? (
         <button
           type="button"
-          className="absolute -right-1 -top-1 z-10 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-amber-200/70 bg-amber-50/90 px-1 text-[11px] shadow-pastel hover:bg-amber-100/80 dark:border-amber-500/35 dark:bg-amber-950/30 dark:hover:bg-amber-950/45"
+          className="absolute -right-1 -top-1 z-10 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-amber-200/50 bg-amber-300/95 px-1 text-[11px] text-amber-950 shadow-pastel hover:bg-amber-200"
           title={t("node_reviewer_comments")}
           onClick={(e) => {
             e.stopPropagation();
@@ -158,15 +255,14 @@ export default function MindmapReactNode(props: { node?: Node }) {
           }}
         >
           <span aria-hidden>💬</span>
-          <span className="ml-0.5 font-medium text-amber-800/90 dark:text-amber-100/90">{reviewCommentCount}</span>
+          <span className="ml-0.5 font-semibold tabular-nums">{reviewCommentCount}</span>
         </button>
       ) : null}
       <div
         className={[
-          "flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-md border px-3 py-2 shadow-sm",
-          borderClass(type, rootHub),
-          surfaceClass(type, rootHub),
-          statusClass(status)
+          `${nodeSurfaceClass(type)} flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden px-3 py-2.5`,
+          nodeStatusRing(status),
+          reparentingNodeId === id ? "ring-2 ring-amber-200/90 dark:ring-amber-300/70" : ""
         ].join(" ")}
         onClick={(e) => {
           e.stopPropagation();
@@ -186,28 +282,28 @@ export default function MindmapReactNode(props: { node?: Node }) {
             ref={riskRef}
             data-conflict-alert
             className={[
-              "mb-2 shrink-0 rounded-md border px-2 py-1.5 text-[10px] leading-snug",
+              "mb-2 shrink-0 rounded-2xl border px-2 py-1.5 text-[10px] leading-snug",
               status === "conflict"
-                ? "border-rose-300/80 bg-rose-50/90 text-rose-900/95 dark:border-rose-500/40 dark:bg-rose-950/30 dark:text-rose-100/95"
-                : "border-amber-300/70 bg-amber-50/85 text-amber-900/95 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-100/90"
+                ? "border-rose-300/60 bg-black/30 text-rose-50"
+                : "border-amber-300/50 bg-black/25 text-amber-50"
             ].join(" ")}
           >
             <div
               className={
                 status === "conflict"
-                  ? "font-semibold uppercase tracking-wide text-rose-700/90"
-                  : "font-semibold uppercase tracking-wide text-amber-800/90"
+                  ? "font-semibold uppercase tracking-wide text-rose-100"
+                  : "font-semibold uppercase tracking-wide text-amber-100"
               }
             >
               {status === "conflict" ? t("node_logic_conflict") : t("node_downstream_risk")}
             </div>
             {violationSummary ? (
-              <div className="mt-1 whitespace-pre-wrap break-words text-stone-800 dark:text-stone-100">
+              <div className="mt-1 whitespace-pre-wrap break-words text-white/95">
                 {violationSummary}
               </div>
             ) : null}
             {upstreamConflict && status === "unstable" ? (
-              <div className="mt-1 text-[9px] text-amber-800/85">
+              <div className="mt-1 text-[9px] text-amber-100/90">
                 <span className="font-semibold">{t("node_upstream")} </span>
                 {upstreamConflict}
               </div>
@@ -216,7 +312,7 @@ export default function MindmapReactNode(props: { node?: Node }) {
               <>
                 <div
                   className={
-                    status === "conflict" ? "mt-2 font-semibold text-rose-800/90" : "mt-2 font-semibold text-amber-900/90"
+                    status === "conflict" ? "mt-2 font-semibold text-rose-100" : "mt-2 font-semibold text-amber-100"
                   }
                 >
                   {t("node_inferred_consequences")}
@@ -224,8 +320,8 @@ export default function MindmapReactNode(props: { node?: Node }) {
                 <div
                   className={
                     status === "conflict"
-                      ? "mt-0.5 whitespace-pre-wrap break-words text-rose-900/90"
-                      : "mt-0.5 whitespace-pre-wrap break-words text-amber-900/90"
+                      ? "mt-0.5 whitespace-pre-wrap break-words text-rose-50"
+                      : "mt-0.5 whitespace-pre-wrap break-words text-amber-50"
                   }
                 >
                   {inferredConsequences}
@@ -238,16 +334,16 @@ export default function MindmapReactNode(props: { node?: Node }) {
         {criticalPairs.length > 0 ? (
           <div
             ref={valuesRef}
-            className="mb-2 shrink-0 rounded-md border border-emerald-200/70 bg-emerald-50/80 px-2 py-1.5 dark:border-emerald-500/35 dark:bg-emerald-950/25"
+            className="mb-2 shrink-0 rounded-2xl border border-white/20 bg-white/10 px-2 py-1.5 backdrop-blur-sm"
           >
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-emerald-800/85 dark:text-emerald-100/90">
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-white/90">
               {t("node_critical_data")}
             </div>
             <ul className="mt-1 list-none space-y-1.5 p-0">
               {criticalPairs.map((row, i) => (
-                <li key={i} className="text-[10px] leading-snug text-emerald-900/90 dark:text-emerald-50/95">
-                  <span className="font-semibold text-emerald-800/90 dark:text-emerald-100/90">{row.label}:</span>{" "}
-                  <span className="break-words font-medium text-emerald-900/90 dark:text-emerald-50/95">{row.value}</span>
+                <li key={i} className="text-[10px] leading-snug text-white/95">
+                  <span className="font-semibold text-white">{row.label}:</span>{" "}
+                  <span className="break-words font-medium text-white/90">{row.value}</span>
                 </li>
               ))}
             </ul>
@@ -256,41 +352,110 @@ export default function MindmapReactNode(props: { node?: Node }) {
 
         <div
           ref={scrollRef}
-          className="min-h-0 max-h-[300px] min-w-0 flex-1 overflow-y-auto overflow-x-hidden text-xs font-semibold leading-snug text-stone-800 dark:text-stone-100"
+          className="min-h-0 max-h-[300px] min-w-0 flex-1 overflow-y-auto overflow-x-hidden text-xs font-semibold leading-snug text-white"
         >
           <span className="block whitespace-pre-wrap break-words">{label || t("node_untitled")}</span>
         </div>
 
         <div
           ref={chipsRef}
-          className="mt-1 flex shrink-0 flex-wrap items-center gap-2 border-t border-stone-200/50 pt-1 dark:border-white/10"
+          className="mt-1 flex shrink-0 flex-wrap items-center gap-2 border-t border-white/20 pt-1"
         >
-          <span
-            className={[
-              "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
-              chipClass(type, rootHub)
-            ].join(" ")}
-          >
+          <span className="inline-flex items-center rounded-full border border-white/35 bg-white/15 px-2 py-0.5 text-[10px] font-medium text-white">
             {rootHub && isInferredType(type) ? t("node_root_inferred") : type || t("node_type_none")}
           </span>
           {status === "conflict" ? (
-            <span className="rounded-full border border-rose-200/80 bg-rose-100/60 px-2 py-0.5 text-[10px] font-semibold text-rose-800/90">
+            <span className="rounded-full border border-rose-200/50 bg-rose-500/50 px-2 py-0.5 text-[10px] font-semibold text-white">
               {t("node_status_conflict")}
             </span>
           ) : status === "unstable" ? (
-            <span className="rounded-full border border-amber-200/80 bg-amber-100/60 px-2 py-0.5 text-[10px] font-semibold text-amber-800/90">
+            <span className="rounded-full border border-amber-200/50 bg-amber-400/50 px-2 py-0.5 text-[10px] font-semibold text-amber-950">
               {t("node_status_affected")}
             </span>
           ) : (
-            <span className="text-[11px] text-stone-500 dark:text-stone-400">
+            <span className="text-[11px] text-white/75">
               {status === "firm" ? t("type_firm") : status === "draft" ? t("type_draft") : status}
             </span>
           )}
           {isNewHighlighted ? (
-            <span className="rounded-full border border-lime-300/80 bg-lime-100/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-800/90 dark:border-lime-500/40 dark:bg-lime-950/35 dark:text-lime-100/90">
+            <span className="rounded-full border border-lime-200/50 bg-lime-300/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-50">
               {t("node_badge_new")}
             </span>
           ) : null}
+        </div>
+
+        {hasOutgoingChildren && id ? (
+          <div
+            ref={subtreeRef}
+            className="mt-0.5 shrink-0 border-t border-white/20 pt-1"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/35 bg-white/12 px-2 py-1.5 text-center text-[10px] font-semibold leading-tight text-white shadow-sm hover:bg-white/22"
+              title={isSubtreeCollapsed ? t("node_subtree_expand_n", { n: hiddenDescendantCount }) : t("node_subtree_fold")}
+              aria-label={
+                isSubtreeCollapsed
+                  ? t("node_subtree_expand_n", { n: hiddenDescendantCount })
+                  : t("node_subtree_fold")
+              }
+              aria-pressed={isSubtreeCollapsed}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapsedSubtree(id);
+              }}
+            >
+              {isSubtreeCollapsed ? (
+                <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
+              )}
+              <span>
+                {isSubtreeCollapsed
+                  ? t("node_subtree_expand_n", { n: hiddenDescendantCount })
+                  : t("node_subtree_fold")}
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        <div
+          ref={actionsRef}
+          className="mt-0.5 flex shrink-0 items-center justify-end gap-0.5 border-t border-white/20 pt-1"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            disabled={!graph}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white shadow-sm hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+            title={t("node_add_child")}
+            aria-label={t("node_add_child")}
+            onClick={onAddChild}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+          </button>
+          <button
+            type="button"
+            disabled={!graph}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white shadow-sm hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+            title={t("node_move_reparent")}
+            aria-label={t("node_move_reparent")}
+            onClick={onMoveReparent}
+          >
+            <MoveRight className="h-3.5 w-3.5" strokeWidth={2.25} />
+          </button>
+          <button
+            type="button"
+            disabled={!graph}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/50 bg-rose-500/30 text-rose-50 shadow-sm hover:bg-rose-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+            title={t("node_delete")}
+            aria-label={t("node_delete")}
+            onClick={onDeleteNode}
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+          </button>
         </div>
       </div>
     </div>

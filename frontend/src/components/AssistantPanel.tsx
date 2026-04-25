@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, MessageCircle, RotateCcw } from "lucide-react";
+import { MessageCircle, RotateCcw, X } from "lucide-react";
 import { combineGraphs } from "../lib/graphBranch";
 import { getBackendBase } from "../lib/backendBase";
 import { useI18n } from "../i18n/useI18n";
@@ -12,7 +12,6 @@ import {
   type OptimismMetric
 } from "../lib/optimismMeter";
 import type { MindmapJson } from "../types/mindmap";
-import AssistantPanelInactive from "./AssistantPanelInactive";
 import AssistantBlackSwanTab from "./assistant/tabs/AssistantBlackSwanTab";
 import AssistantMeceTab from "./assistant/tabs/AssistantMeceTab";
 import AssistantOptimismTab from "./assistant/tabs/AssistantOptimismTab";
@@ -43,10 +42,41 @@ import { useAssistantGraphSlice, useAssistantSessionSlice, useAssistantSkillsSli
 
 export type { CustomSkillRow } from "./assistant/assistantTypes";
 
+const ASSISTANT_SOURCE_FILE_PICK_KEY = "mindmap_assistant_source_file_pick_v1";
+
+function readAssistantSourceFilePickMap(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(ASSISTANT_SOURCE_FILE_PICK_KEY);
+    if (!raw) return {};
+    const p = JSON.parse(raw) as unknown;
+    if (p && typeof p === "object" && !Array.isArray(p)) {
+      return Object.fromEntries(
+        Object.entries(p as Record<string, unknown>).map(([k, v]) => [
+          k,
+          Array.isArray(v) ? (v as unknown[]).map((x) => String(x)) : []
+        ])
+      );
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function writeAssistantSourceFilePickForProject(projectId: string, ids: string[]) {
+  try {
+    const m = readAssistantSourceFilePickMap();
+    m[projectId] = ids;
+    localStorage.setItem(ASSISTANT_SOURCE_FILE_PICK_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function AssistantPanel() {
   const { t, locale } = useI18n();
   const { mainGraph, sandboxGraph, sandboxMode, setSandboxMode, loadMainGraph, clearSandbox } = useAssistantGraphSlice();
-  const { selectedNode, assistantActive, setAssistantActive, setAssistantDockOpen } = useAssistantSessionSlice();
+  const { selectedNode, closeAssistantSession } = useAssistantSessionSlice();
   const { skills, toggleSkill } = useAssistantSkillsSlice();
 
   const backendBase = getBackendBase();
@@ -56,6 +86,16 @@ export default function AssistantPanel() {
   const [persona, setPersona] = useState<string>(() => localStorage.getItem("mindmap_assistant_persona") || "");
   const [applyInstruction, setApplyInstruction] = useState("");
   const [webSearchQuery, setWebSearchQuery] = useState<string>(() => localStorage.getItem("mindmap_web_search_query") || "");
+  const [activeProjectId, setActiveProjectId] = useState(() => {
+    try {
+      return (typeof localStorage !== "undefined" && localStorage.getItem("mindmap_project_id")?.trim()) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [projectFiles, setProjectFiles] = useState<{ id: string; filename: string }[]>([]);
+  const [projectFilesLoadError, setProjectFilesLoadError] = useState(false);
+  const [selectedSourceFileIds, setSelectedSourceFileIds] = useState<string[]>([]);
   const [mode, setMode] = useState<"chat" | "optimism" | "blackSwan" | "mece" | "roundtable">("chat");
 
   const [rtPersonas, setRtPersonas] = useState<RoundtablePersona[]>([]);
@@ -233,6 +273,85 @@ export default function AssistantPanel() {
     }
   }, [webSearchQuery]);
 
+  useEffect(() => {
+    const read = () => (typeof localStorage !== "undefined" && localStorage.getItem("mindmap_project_id")?.trim()) || "";
+    setActiveProjectId(read());
+    const onProject = (e: Event) => {
+      const id = (e as CustomEvent<{ projectId?: string }>).detail?.projectId;
+      if (id != null) setActiveProjectId(String(id).trim());
+    };
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key === "mindmap_project_id") setActiveProjectId((ev.newValue || "").trim());
+    };
+    window.addEventListener("mindmap:projectId", onProject);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("mindmap:projectId", onProject);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeProjectId || !backendBase) {
+      setProjectFiles([]);
+      setProjectFilesLoadError(false);
+      return;
+    }
+    const ac = new AbortController();
+    setProjectFilesLoadError(false);
+    (async () => {
+      try {
+        const res = await fetch(
+          `${backendBase}/projects/${encodeURIComponent(activeProjectId)}/files`,
+          { signal: ac.signal }
+        );
+        if (!res.ok) {
+          setProjectFilesLoadError(true);
+          setProjectFiles([]);
+          return;
+        }
+        const rows = (await res.json()) as { id: string; filename: string }[];
+        if (ac.signal.aborted) return;
+        setProjectFiles(
+          Array.isArray(rows) ? rows.map((r) => ({ id: r.id, filename: r.filename || r.id })) : []
+        );
+      } catch {
+        if (!ac.signal.aborted) {
+          setProjectFilesLoadError(true);
+          setProjectFiles([]);
+        }
+      }
+    })();
+    return () => ac.abort();
+  }, [activeProjectId, backendBase]);
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setSelectedSourceFileIds([]);
+      return;
+    }
+    if (projectFiles.length === 0) {
+      setSelectedSourceFileIds([]);
+      return;
+    }
+    const idSet = new Set(projectFiles.map((f) => f.id));
+    setSelectedSourceFileIds((prev) => {
+      if (prev.length > 0) {
+        const kept = prev.filter((id) => idSet.has(id));
+        if (kept.length > 0) return kept;
+      }
+      const map = readAssistantSourceFilePickMap();
+      const saved = (map[activeProjectId] ?? []).filter((id) => idSet.has(id));
+      if (saved.length > 0) return saved;
+      return projectFiles.map((f) => f.id);
+    });
+  }, [activeProjectId, projectFiles]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    writeAssistantSourceFilePickForProject(activeProjectId, selectedSourceFileIds);
+  }, [activeProjectId, selectedSourceFileIds]);
+
   const actionsCtxRef = useRef({} as AssistantPanelActionsCtx);
   const {
     sendChat,
@@ -262,6 +381,7 @@ export default function AssistantPanel() {
     persona,
     webSearchQuery,
     skillsWebSearch: skills.webSearch,
+    assistantSourceFileIds: selectedSourceFileIds,
     payloadSkills,
     builtinPayload,
     sandboxMode,
@@ -317,8 +437,7 @@ export default function AssistantPanel() {
     setRtSteering,
     loadMainGraph,
     clearSandbox,
-    setSandboxMode,
-    setAssistantActive
+    setSandboxMode
   };
 
   const discardDraft = useCallback(() => {
@@ -376,22 +495,14 @@ export default function AssistantPanel() {
     setError("");
   }, []);
 
-  const activateAssistant = useCallback(() => {
-    if (!selectedNode?.id) return;
-    setAssistantActive(true);
-    setSandboxMode(true);
-    setError("");
-  }, [selectedNode?.id, setAssistantActive, setSandboxMode]);
-
   const deactivateAssistant = useCallback(() => {
-    setAssistantActive(false);
-    setSandboxMode(false);
+    closeAssistantSession();
     setError("");
     setRtTranscript([]);
     setRtProposal(null);
     setRtConfirmApply(false);
     setRtSteering("");
-  }, [setAssistantActive, setSandboxMode]);
+  }, [closeAssistantSession]);
 
   const handleBsToggleScenario = useCallback((scenarioId: string) => {
     setBsSelectedScenarioIds((prev) => {
@@ -469,18 +580,32 @@ export default function AssistantPanel() {
     setError("");
   }, []);
 
-  if (!assistantActive) {
-    return (
-      <AssistantPanelInactive
-        selectedNode={selectedNode}
-        setAssistantDockOpen={setAssistantDockOpen}
-        onActivate={activateAssistant}
-      />
-    );
-  }
+  const runSendChat = useCallback(async () => {
+    const raw = draft.trim();
+    if (raw) {
+      const m = raw.match(/^\s*\/(chat|optimism|blackswan|black-swan|mece|roundtable)\s*$/i);
+      if (m) {
+        const g = m[1].toLowerCase().replace("black-swan", "blackswan");
+        const nextMode =
+          g === "chat"
+            ? "chat"
+            : g === "optimism"
+              ? "optimism"
+              : g === "blackswan"
+                ? "blackSwan"
+                : g === "mece"
+                  ? "mece"
+                  : "roundtable";
+        setMode(nextMode);
+        setDraft("");
+        return;
+      }
+    }
+    await sendChat();
+  }, [draft, sendChat]);
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col border-r border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/95">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/95">
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-2 py-2 dark:border-slate-800">
         <MessageCircle className="h-4 w-4 text-slate-600 dark:text-slate-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
@@ -489,14 +614,11 @@ export default function AssistantPanel() {
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <button
             type="button"
-            className="inline-flex items-center gap-0.5 rounded-lg border border-transparent px-1.5 py-1 text-[10px] font-medium text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
-            title={t("assistant_hide_title")}
-            onClick={() => setAssistantDockOpen(false)}
+            className="inline-flex items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 text-[10px] font-medium text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+            title={t("assistant_close_session")}
+            onClick={deactivateAssistant}
           >
-            <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
-            {t("assistant_hide")}
-          </button>
-          <button type="button" className="ios-button" onClick={deactivateAssistant}>
+            <X className="h-3.5 w-3.5" aria-hidden />
             {t("assistant_close_session")}
           </button>
         </div>
@@ -531,6 +653,59 @@ export default function AssistantPanel() {
               />
             </label>
           )}
+          <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-200">
+            <div className="font-medium">{t("assistant_source_files")}</div>
+            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_hint")}</p>
+            {!activeProjectId ? (
+              <p className="mt-2 text-[10px] text-amber-800 dark:text-amber-200/90">{t("assistant_source_files_no_project")}</p>
+            ) : projectFilesLoadError ? (
+              <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{t("assistant_source_files_error")}</p>
+            ) : projectFiles.length === 0 ? (
+              <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_empty")}</p>
+            ) : (
+              <>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="text-[10px] text-sky-600 underline dark:text-sky-400"
+                    onClick={() => setSelectedSourceFileIds(projectFiles.map((f) => f.id))}
+                  >
+                    {t("assistant_select_all_sources")}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-[10px] text-sky-600 underline dark:text-sky-400"
+                    onClick={() => setSelectedSourceFileIds([])}
+                  >
+                    {t("assistant_select_no_sources")}
+                  </button>
+                </div>
+                <label className="mt-1.5 block">
+                  <span className="sr-only">{t("assistant_source_files")}</span>
+                  <select
+                    multiple
+                    size={Math.min(8, Math.max(3, projectFiles.length))}
+                    className="w-full max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    value={selectedSourceFileIds}
+                    onChange={(e) => {
+                      const next = Array.from(e.target.selectedOptions, (o) => o.value);
+                      setSelectedSourceFileIds(next);
+                    }}
+                    aria-label={t("assistant_source_files")}
+                  >
+                    {projectFiles.map((f) => (
+                      <option key={f.id} value={f.id} title={f.filename}>
+                        {f.filename}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                  {t("assistant_source_files_selection_count", { n: selectedSourceFileIds.length })}
+                </p>
+              </>
+            )}
+          </div>
         </div>
         {sandboxHasDrafts ? (
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -741,7 +916,7 @@ export default function AssistantPanel() {
         draft={draft}
         onDraftChange={setDraft}
         chatBusy={chatBusy}
-        onSendChat={sendChat}
+        onSendChat={runSendChat}
         messagesCount={messages.length}
         onApplyToMindmap={applyToMindmap}
         onApplyWithInstruction={applyWithInstruction}

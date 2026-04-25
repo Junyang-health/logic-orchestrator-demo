@@ -15,14 +15,15 @@ export function useAssistantGraphSlice() {
   );
 }
 
-/** Session chrome: selection, assistant on/off, dock. */
+/** Session chrome: selection, assistant on/off, overlay. */
 export function useAssistantSessionSlice() {
   return useUiStore(
     useShallow((s) => ({
       selectedNode: s.selectedNode,
       assistantActive: s.assistantActive,
       setAssistantActive: s.setAssistantActive,
-      setAssistantDockOpen: s.setAssistantDockOpen
+      setAssistantOverlayOpen: s.setAssistantOverlayOpen,
+      closeAssistantSession: s.closeAssistantSession
     }))
   );
 }

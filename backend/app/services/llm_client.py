@@ -181,7 +181,9 @@ class LlmClient:
         self._gemini_client = genai.Client(api_key=api_key)
         return self._gemini_client
 
-    def _deepseek_chat_completion(self, *, model: str, system: str, user: str) -> str:
+    def _deepseek_chat_completion(
+        self, *, model: str, system: str, user: str, max_output_tokens: int | None = None
+    ) -> str:
         api_key = self._deepseek_api_key()
         if not api_key:
             raise RuntimeError("Missing DEEPSEEK_API_KEY env var")
@@ -190,7 +192,8 @@ class LlmClient:
         headers = {"Authorization": f"Bearer {api_key}"}
         # deepseek-chat accepts at most 8192 output tokens; larger values can return HTTP 400.
         # https://api-docs.deepseek.com/api/create-chat-completion
-        mt = min(8192, max(256, int(self._cfg.max_tokens)))
+        base = int(max_output_tokens) if max_output_tokens is not None else int(self._cfg.max_tokens)
+        mt = min(8192, max(256, base))
         payload = {
             "model": model,
             "messages": [
@@ -271,8 +274,10 @@ class LlmClient:
         # Anthropic is intentionally disabled for this project.
         raise RuntimeError("No vision-capable provider available. Configure GEMINI_API_KEY.")
 
-    def generate_json(self, *, system: str, user: str) -> Any:
+    def generate_json(self, *, system: str, user: str, max_output_tokens: int | None = None) -> Any:
+        """max_output_tokens overrides the client default (needed for large JSON like mindmaps)."""
         model_id = self._cfg.model
+        out_tok = max_output_tokens
 
         # Enforce fallback policy: Gemini preferred, DeepSeek backup.
         if _looks_like_gemini_model(model_id) and (not self._gemini_api_key()) and self._fallback_to_deepseek_if_available():
@@ -290,6 +295,7 @@ class LlmClient:
                         model=model,
                         system=system.strip(),
                         user=prompt_user,
+                        max_output_tokens=out_tok,
                     )
                     raw = _strip_code_fences(text.strip())
                     return _json_loads_lenient(raw)
@@ -320,7 +326,7 @@ class LlmClient:
                     "Return JSON only. No markdown.",
                 ]
             ).strip()
-            toks = min(16384, max(512, int(self._cfg.max_tokens)))
+            toks = min(16384, max(512, int(out_tok or self._cfg.max_tokens)))
             last_err: Exception | None = None
             for attempt in range(4):
                 try:
@@ -354,6 +360,7 @@ class LlmClient:
                     model=_normalize_deepseek_model("deepseek:deepseek-chat"),
                     system=system.strip(),
                     user="\n".join([user.strip(), "", "Return JSON only. No markdown."]).strip(),
+                    max_output_tokens=out_tok,
                 )
                 raw = _strip_code_fences(text.strip())
                 return _json_loads_lenient(raw)

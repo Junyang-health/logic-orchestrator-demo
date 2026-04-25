@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.assistant_apply import apply_assistant_conversation_to_graph, run_assistant_chat
+from app.services.project_source_text import load_for_assistant_prompt
 from app.services.assistant_roundtable import apply_roundtable_patch, propose_roundtable_edits, run_roundtable_round
 from app.services.assistant_mece import (
     mece_apply_selected_modifications,
@@ -35,6 +36,32 @@ from app.services.skill_url_fetch import fetch_skill_text
 router = APIRouter()
 
 
+def _assistant_load_source_context(
+    *,
+    project_id: Optional[str],
+    include_project_sources: bool,
+    source_max_chars: int,
+    source_file_ids: Optional[List[str]],
+) -> Optional[str]:
+    if not include_project_sources or source_max_chars <= 0:
+        return None
+    if source_file_ids is not None and len(source_file_ids) == 0:
+        return None
+    fids: Optional[List[str]]
+    if source_file_ids is None:
+        fids = None
+    else:
+        fids = [str(x).strip() for x in source_file_ids[:64] if str(x).strip()]
+        if not fids:
+            return None
+    return load_for_assistant_prompt(
+        project_id,
+        include=True,
+        max_chars=source_max_chars,
+        file_ids=fids,
+    )
+
+
 class ChatMessageIn(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1)
@@ -60,6 +87,25 @@ class AssistantChatRequest(BaseModel):
     sandbox_mode: bool = Field(
         default=False,
         description="User is exploring in sandbox; draft nodes may appear in the graph snapshot.",
+    )
+    project_id: Optional[str] = Field(
+        default=None,
+        description="When set, server may load extracted project file text and append to the model prompt.",
+    )
+    include_project_sources: bool = Field(
+        default=True,
+        description="If true and project_id is set, append MarkItDown / extracted text (truncated).",
+    )
+    source_max_chars: int = Field(
+        default=40_000,
+        ge=0,
+        le=100_000,
+        description="Cap on source text in the prompt; 0 disables attachment.",
+    )
+    source_file_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Restrict to these project file ids (order preserved). Empty list = no files. Omitted = all files when sources are enabled.",
+        max_length=64,
     )
 
 
@@ -188,6 +234,14 @@ class AssistantApplyRequest(BaseModel):
     sandbox_mode: bool = Field(
         default=False,
         description="Consolidate sandbox chat + draft graph edits into the branch under the root.",
+    )
+    project_id: Optional[str] = None
+    include_project_sources: bool = Field(default=True, description="Append extracted file text to apply prompt when project_id is set.")
+    source_max_chars: int = Field(default=40_000, ge=0, le=100_000)
+    source_file_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Restrict to these project file ids. Empty = none. Omitted = all files.",
+        max_length=64,
     )
 
 
@@ -441,6 +495,12 @@ def assistant_fetch_skill_url(req: FetchSkillUrlRequest) -> FetchSkillUrlRespons
 def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
     msgs = [m.model_dump() for m in req.messages]
     custom = [s.model_dump() for s in req.custom_skills]
+    source_context = _assistant_load_source_context(
+        project_id=req.project_id,
+        include_project_sources=bool(req.include_project_sources),
+        source_max_chars=int(req.source_max_chars or 0),
+        source_file_ids=req.source_file_ids,
+    )
     try:
         max_chat = min(8192, int(os.getenv("LLM_MAX_TOKENS_CHAT", "4096")))
         llm = LlmClient(LlmConfig(model=get_active_model(), max_tokens=max_chat))
@@ -454,6 +514,7 @@ def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
             custom_skills=custom,
             builtin_skills=dict(req.builtin_skills or {}),
             sandbox_mode=bool(req.sandbox_mode),
+            source_context=source_context,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Assistant chat failed: {e}") from e
@@ -469,6 +530,12 @@ def assistant_apply(req: AssistantApplyRequest) -> AssistantApplyResponse:
     if req.branch_root_id not in ids:
         raise HTTPException(status_code=400, detail="branch_root_id not found in full_nodes")
 
+    source_context = _assistant_load_source_context(
+        project_id=req.project_id,
+        include_project_sources=bool(req.include_project_sources),
+        source_max_chars=int(req.source_max_chars or 0),
+        source_file_ids=req.source_file_ids,
+    )
     msgs = [m.model_dump() for m in req.messages]
     custom = [s.model_dump() for s in req.custom_skills]
     try:
@@ -483,6 +550,7 @@ def assistant_apply(req: AssistantApplyRequest) -> AssistantApplyResponse:
             custom_skills=custom,
             builtin_skills=dict(req.builtin_skills or {}),
             sandbox_mode=bool(req.sandbox_mode),
+            source_context=source_context,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

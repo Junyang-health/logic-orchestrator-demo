@@ -271,15 +271,66 @@ def _ensure_mindmap_root(*, data: dict[str, Any], summaries: list[str]) -> None:
     data["edges"] = edges
 
 
+# Mindmaps are large (8–24 nodes + edges); default LLM max_tokens (1400) truncates JSON mid-stream.
+MINDMAP_JSON_MAX_OUTPUT_TOKENS = 8192
+
+
+def _normalize_mindmap_json_payload(data: Any) -> dict[str, Any]:
+    """
+    Some models wrap the graph or use alternate key names. Ensure we get {nodes, edges} lists.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("LLM response was not a JSON object")
+    d = data
+    nodes = d.get("nodes")
+    edges = d.get("edges")
+    if isinstance(nodes, list) and isinstance(edges, list):
+        return d
+    for key in ("Nodes", "NODES"):
+        n = d.get(key)
+        if isinstance(n, list) and "nodes" not in d:
+            d = {**d, "nodes": n}
+            break
+    for key in ("Edges", "EDGES"):
+        e = d.get(key)
+        if isinstance(e, list) and "edges" not in d:
+            d = {**d, "edges": e}
+            break
+    nodes = d.get("nodes")
+    edges = d.get("edges")
+    if isinstance(nodes, list) and isinstance(edges, list):
+        return d
+    for wrap in ("mindmap", "data", "result", "output", "map", "graph", "json", "response"):
+        inner = d.get(wrap)
+        if not isinstance(inner, dict):
+            continue
+        n2, e2 = inner.get("nodes"), inner.get("edges")
+        if isinstance(n2, list) and isinstance(e2, list):
+            return {**{k: v for k, v in d.items() if k != wrap}, **inner}
+        n2, e2 = inner.get("Nodes"), inner.get("Edges")
+        if isinstance(n2, list) and isinstance(e2, list):
+            return {**inner, "nodes": n2, "edges": e2}
+    if isinstance(d.get("nodes"), list) and d.get("edges") is None:
+        return {**d, "edges": []}
+    if isinstance(d.get("edges"), list) and d.get("nodes") is None:
+        raise ValueError("LLM response has edges but no nodes list")
+    keys_preview = str(list(d.keys())[:20])
+    raise ValueError(
+        "LLM response missing top-level nodes/edges (or wrapped under mindmap/data). "
+        f"Keys seen: {keys_preview}. If JSON was cut off, increase MINDMAP_JSON_MAX_OUTPUT_TOKENS or LLM max tokens."
+    )
+
+
 def generate_mindmap_json(*, claude, summaries: list[str], evidence: list[EvidenceItem]) -> MindmapJson:
     user_prompt = build_mindmap_prompt(summaries=summaries, evidence=evidence)
-    data = claude.generate_json(system=SYSTEM_PROMPT, user=user_prompt)
+    raw = claude.generate_json(
+        system=SYSTEM_PROMPT,
+        user=user_prompt,
+        max_output_tokens=MINDMAP_JSON_MAX_OUTPUT_TOKENS,
+    )
+    data = _normalize_mindmap_json_payload(raw)
 
     # Minimal validation / normalization.
-    if not isinstance(data, dict):
-        raise ValueError("Claude response was not a JSON object")
-    if "nodes" not in data or "edges" not in data:
-        raise ValueError("Claude response missing nodes/edges")
     if not isinstance(data["nodes"], list) or not isinstance(data["edges"], list):
         raise ValueError("Claude response nodes/edges wrong types")
 
@@ -363,12 +414,13 @@ def generate_mindmap_json_intent_only(*, claude, intent: str) -> MindmapJson:
         "- Do **not** invent filenames, page numbers, or quoted excerpts from imaginary documents.\n"
         "- Do **not** invent specific statistics, dates, or compliance claims; when unsure, phrase nodes as questions or hypotheses.\n"
     )
-    data = claude.generate_json(system=SYSTEM_PROMPT, user=user_prompt)
+    raw2 = claude.generate_json(
+        system=SYSTEM_PROMPT,
+        user=user_prompt,
+        max_output_tokens=MINDMAP_JSON_MAX_OUTPUT_TOKENS,
+    )
+    data = _normalize_mindmap_json_payload(raw2)
 
-    if not isinstance(data, dict):
-        raise ValueError("Claude response was not a JSON object")
-    if "nodes" not in data or "edges" not in data:
-        raise ValueError("Claude response missing nodes/edges")
     if not isinstance(data["nodes"], list) or not isinstance(data["edges"], list):
         raise ValueError("Claude response nodes/edges wrong types")
 

@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { combineGraphs } from "../lib/graphBranch";
+import {
+  computeHiddenNodeIds,
+  getTopLevelCollapseRootIds,
+  pruneCollapsedRoots
+} from "../lib/mindmapCollapse";
 import { normalizeMindmapJsonNodeTypes, normalizeMindmapNodeType } from "../lib/normalizeMindmapNodeType";
 import type { MindmapEdge, MindmapJson, MindmapNode } from "../types/mindmap";
 import type { ReviewComment } from "../types/review";
@@ -106,18 +111,6 @@ type SourceMaterialState = {
   clearSourceFiles: () => void;
 };
 
-const ASSISTANT_DOCK_W_KEY = "mindmap_assistant_dock_width_px";
-
-function readAssistantDockWidthPx(): number {
-  try {
-    const n = Number(localStorage.getItem(ASSISTANT_DOCK_W_KEY));
-    if (Number.isFinite(n)) return Math.min(720, Math.max(260, Math.round(n)));
-  } catch {
-    /* ignore */
-  }
-  return 300;
-}
-
 function readDockOpen(key: string, defaultOpen: boolean): boolean {
   try {
     const v = localStorage.getItem(key);
@@ -141,14 +134,34 @@ type UiState = {
   toggleTheme: () => void;
   assistantActive: boolean;
   setAssistantActive: (on: boolean) => void;
-  /** Whole left assistant column visible (vs collapsed to edge tab). */
-  assistantDockOpen: boolean;
-  setAssistantDockOpen: (open: boolean) => void;
+  /** Whether the canvas assistant (chat / simulators) is shown as a pop-up over the map. */
+  assistantOverlayOpen: boolean;
+  setAssistantOverlayOpen: (open: boolean) => void;
+  /** Closes the assistant overlay and ends the assistant/sandbox session (idempotent). */
+  closeAssistantSession: () => void;
+  /**
+   * When set, the user is moving a node to a new parent: click another node to attach.
+   * `reparentingRelation` is the edge label to use (e.g. "supports"), aligned with the Source panel field when started from there.
+   */
+  reparentingNodeId: string | null;
+  reparentingRelation: string;
+  startReparent: (nodeId: string, relationship: string) => void;
+  clearReparent: () => void;
   /** Right Source/Review column visible. */
   rightDockOpen: boolean;
   setRightDockOpen: (open: boolean) => void;
-  assistantDockWidthPx: number;
-  setAssistantDockWidthPx: (w: number) => void;
+  /** X6 canvas dot grid visibility. */
+  canvasGridVisible: boolean;
+  setCanvasGridVisible: (v: boolean) => void;
+  /**
+   * Node ids whose **subtrees** are folded (descendants hidden on canvas; full graph unchanged in store).
+   * Persisted in localStorage (`mindmap_collapsed_subtree_roots`).
+   */
+  collapsedSubtreeRootIds: string[];
+  toggleCollapsedSubtree: (nodeId: string) => void;
+  expandAllCollapsedSubtrees: () => void;
+  /** Set collapsed roots to all graph entry nodes with children (show only top-level). */
+  collapseAllSubtreesToTopLevel: () => void;
 } & SkillsState &
   ReviewState &
   SourceMaterialState;
@@ -210,6 +223,20 @@ type Store = UiState & GraphState;
 type StoreSet = (partial: Partial<Store> | ((state: Store) => Partial<Store>)) => void;
 type StoreGet = () => Store;
 
+const COLLAPSED_SUBTREE_KEY = "mindmap_collapsed_subtree_roots";
+
+function readCollapsedSubtreeRoots(): string[] {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SUBTREE_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.map((x) => String(x)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function applyClustersFromMainGraph(set: StoreSet, get: StoreGet) {
   const st = get();
   const main = st.mainGraph ?? { nodes: [], edges: [] };
@@ -247,15 +274,18 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
   toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
   assistantActive: false,
   setAssistantActive: (on) => set({ assistantActive: on }),
-  assistantDockOpen: readDockOpen("mindmap_assistant_dock_open", true),
-  setAssistantDockOpen: (open) => {
-    try {
-      localStorage.setItem("mindmap_assistant_dock_open", open ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-    set({ assistantDockOpen: open });
-  },
+  assistantOverlayOpen: false,
+  setAssistantOverlayOpen: (open) => set({ assistantOverlayOpen: open }),
+  closeAssistantSession: () =>
+    set({ assistantOverlayOpen: false, assistantActive: false, sandboxMode: false }),
+  reparentingNodeId: null,
+  reparentingRelation: "supports",
+  startReparent: (nodeId, relationship) =>
+    set({
+      reparentingNodeId: nodeId,
+      reparentingRelation: relationship.trim() || "supports"
+    }),
+  clearReparent: () => set({ reparentingNodeId: null }),
   rightDockOpen: readDockOpen("mindmap_right_dock_open", true),
   setRightDockOpen: (open) => {
     try {
@@ -265,15 +295,60 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
     }
     set({ rightDockOpen: open });
   },
-  assistantDockWidthPx: readAssistantDockWidthPx(),
-  setAssistantDockWidthPx: (w) => {
-    const clamped = Math.min(720, Math.max(260, Math.round(w)));
+  canvasGridVisible: true,
+  setCanvasGridVisible: (v) => set({ canvasGridVisible: v }),
+
+  collapsedSubtreeRootIds: readCollapsedSubtreeRoots(),
+  toggleCollapsedSubtree: (nodeId) => {
+    const id = nodeId.trim();
+    if (!id) return;
+    const st = get();
+    const roots = new Set(st.collapsedSubtreeRootIds);
+    if (roots.has(id)) roots.delete(id);
+    else roots.add(id);
+    let next = Array.from(roots);
+    const combined = combineGraphs(st.mainGraph, st.sandboxGraph);
+    const allIds = new Set(combined.nodes.map((n) => n.id));
+    next = pruneCollapsedRoots(next, allIds);
+    const hidden = computeHiddenNodeIds(new Set(next), combined.edges, allIds);
+    const selId = st.selectedNode?.id;
     try {
-      localStorage.setItem(ASSISTANT_DOCK_W_KEY, String(clamped));
+      localStorage.setItem(COLLAPSED_SUBTREE_KEY, JSON.stringify(next));
     } catch {
       /* ignore */
     }
-    set({ assistantDockWidthPx: clamped });
+    if (selId && hidden.has(selId)) {
+      set({ collapsedSubtreeRootIds: next, selectedNode: null });
+    } else {
+      set({ collapsedSubtreeRootIds: next });
+    }
+  },
+  expandAllCollapsedSubtrees: () => {
+    try {
+      localStorage.removeItem(COLLAPSED_SUBTREE_KEY);
+    } catch {
+      /* ignore */
+    }
+    set({ collapsedSubtreeRootIds: [] });
+  },
+  collapseAllSubtreesToTopLevel: () => {
+    const st = get();
+    const combined = combineGraphs(st.mainGraph, st.sandboxGraph);
+    const allIds = new Set(combined.nodes.map((n) => n.id));
+    let next = getTopLevelCollapseRootIds(allIds, combined.edges);
+    next = pruneCollapsedRoots(next, allIds);
+    const hidden = computeHiddenNodeIds(new Set(next), combined.edges, allIds);
+    const selId = st.selectedNode?.id;
+    try {
+      localStorage.setItem(COLLAPSED_SUBTREE_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+    if (selId && hidden.has(selId)) {
+      set({ collapsedSubtreeRootIds: next, selectedNode: null });
+    } else {
+      set({ collapsedSubtreeRootIds: next });
+    }
   },
 
   skills: { webSearch: false, financialAnalyst: false },
@@ -489,9 +564,18 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
     const st = get();
     const targetKey = st.sandboxMode ? "sandboxGraph" : "mainGraph";
     const key = `${source}→${target}::${label ?? ""}`;
+    const filterOutEdge = (edges: MindmapEdge[]) => {
+      const next = edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key);
+      if (next.length < edges.length) return next;
+      // Label from the canvas can differ from mindmap JSON (e.g. only on labels attr); still remove the link.
+      const idx = edges.findIndex((e) => e.source === source && e.target === target);
+      if (idx >= 0) return edges.filter((_, i) => i !== idx);
+      return edges;
+    };
     if (targetKey === "mainGraph") {
       const cur = st.mainGraph ?? { nodes: [], edges: [] };
-      const edges = cur.edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key);
+      const edges = filterOutEdge(cur.edges);
+      if (edges.length === cur.edges.length) return;
       const next = { ...cur, edges };
       set({
         mainGraph: next,
@@ -500,10 +584,12 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
       scheduleDebouncedClustersFromMain(set, get);
     } else {
       const cur = st.sandboxGraph;
+      const edges = filterOutEdge(cur.edges);
+      if (edges.length === cur.edges.length) return;
       set({
         sandboxGraph: {
           ...cur,
-          edges: cur.edges.filter((e) => `${e.source}→${e.target}::${e.label ?? ""}` !== key)
+          edges
         },
         newMarkedNodeIds: { [source]: true, [target]: true }
       });

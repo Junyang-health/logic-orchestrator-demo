@@ -23,6 +23,11 @@ body {
 @layer base {
   :root {
     color-scheme: light;
+    /* Mindmap nodes — muted pastels; inferred = mauve (primary CTA family), evidence = cool blue-gray */
+    --mm-node-inferred: #a89bb8;
+    --mm-node-inferred-dark: #7a6a8a;
+    --mm-node-evidence: #90a6b8;
+    --mm-node-evidence-dark: #5a6e82;
     /* X6 mindmap — muted pastel (canvas + edge SVG) */
     --mm-canvas-bg: #f3f0f4;
     --mm-edge-line-firm: #8b7d96;
@@ -77,6 +82,24 @@ body {
 }
 
 @layer components {
+  /**
+   * Mindmap canvas nodes: inferred vs evidence use distinct muted pastels; white type.
+   */
+  .mm-node-surface-inferred {
+    @apply rounded-3xl border-0 text-white shadow-pastel;
+    background: var(--mm-node-inferred);
+  }
+  html.dark .mm-node-surface-inferred {
+    background: var(--mm-node-inferred-dark);
+  }
+  .mm-node-surface-evidence {
+    @apply rounded-3xl border-0 text-white shadow-pastel;
+    background: var(--mm-node-evidence);
+  }
+  html.dark .mm-node-surface-evidence {
+    background: var(--mm-node-evidence-dark);
+  }
+
   .ios-card {
     @apply rounded-2xl border border-rose-100/50 bg-white/50 shadow-pastel backdrop-blur-md;
     @apply dark:border-violet-900/30 dark:bg-[rgb(32_28_40_/_0.55)] dark:shadow-[0_8px_28px_-16px_rgba(0,0,0,0.45)] dark:backdrop-blur-xl;

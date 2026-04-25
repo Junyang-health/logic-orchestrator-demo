@@ -167,6 +167,7 @@ function AssistantPanelFooterInner(props: AssistantPanelFooterProps) {
               }
             }}
           />
+          <p className="text-[9px] leading-snug text-slate-500 dark:text-slate-500">{t("assistant_mode_slash_hint")}</p>
           <div className="flex flex-col gap-2">
             <button
               type="button"

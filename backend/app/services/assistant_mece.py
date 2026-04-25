@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import io
 import json
 from typing import Any
 
 from app.services import project_storage
 from app.services.llm_client import LlmClient
+from app.services.project_source_text import collect_project_source_text
 from app.services.review_apply import collect_branch_node_ids, merge_review_patch
 from app.services.assistant_simulations import SIM_PATCH_SYSTEM
 
@@ -157,64 +157,6 @@ def _graph_evidence_corpus(*, root_id: str, full_nodes: list[dict[str, Any]], fu
             continue
         lines.append(f"### EvidenceNode {nid} file={fn or 'unknown'}\n{sn[:900]}")
     return "\n\n".join(lines[:80]) if lines else "(no Evidence nodes in this subtree)"
-
-
-def _read_project_file_excerpt(*, project_id: str, max_chars: int = 12000) -> str:
-    if not project_id or not project_storage.project_exists(project_id):
-        return ""
-    parts: list[str] = []
-    total = 0
-    for sf in project_storage.list_files(project_id)[:24]:
-        if total >= max_chars:
-            break
-        try:
-            _, path = project_storage.resolve_file_path(project_id=project_id, file_id=sf.id)
-        except FileNotFoundError:
-            continue
-        if not path.exists():
-            continue
-        fn = sf.filename or path.name
-        extracted = project_storage.read_file_extracted_markdown(project_id, sf.id)
-        if extracted and extracted.strip():
-            chunk = extracted[:8000]
-            parts.append(f"### FILE: {fn}\n{chunk}")
-            total += len(chunk)
-            continue
-        raw = path.read_bytes()
-        low = fn.lower()
-        chunk = ""
-        try:
-            if low.endswith(".pdf") or (sf.content_type or "").lower() == "application/pdf":
-                try:
-                    from pypdf import PdfReader  # type: ignore
-                except Exception:
-                    chunk = f"[PDF {fn}: extraction unavailable]\n"
-                else:
-                    try:
-                        reader = PdfReader(io.BytesIO(raw))
-                    except Exception:
-                        reader = PdfReader(raw)
-                    buf: list[str] = []
-                    for page in reader.pages[:18]:
-                        try:
-                            t = (page.extract_text() or "").strip()
-                        except Exception:
-                            t = ""
-                        if t:
-                            buf.append(" ".join(t.split())[:700])
-                        if sum(len(x) for x in buf) > 10000:
-                            break
-                    chunk = "\n".join(buf)
-            elif low.endswith((".md", ".txt", ".csv", ".json")) or (sf.content_type or "").startswith("text/"):
-                chunk = raw.decode("utf-8", errors="ignore")
-            else:
-                chunk = f"[Binary or unsupported: {fn}]\n"
-        except Exception as e:
-            chunk = f"[Could not read {fn}: {e}]\n"
-        chunk = chunk[:8000]
-        parts.append(f"### FILE: {fn}\n{chunk}")
-        total += len(chunk)
-    return "\n\n".join(parts) if parts else "(no readable project files)"
 
 
 def _validate_scan_payload(
@@ -402,7 +344,7 @@ def mece_check_evidence(
     selected = [by_mid[mid] for mid in modification_ids]
 
     graph_ev = _graph_evidence_corpus(root_id=mece_root_id, full_nodes=full_nodes, full_edges=full_edges)
-    proj_corpus = _read_project_file_excerpt(project_id=(project_id or "").strip(), max_chars=50000)
+    proj_corpus = collect_project_source_text((project_id or "").strip(), max_chars=50_000)
     corpus = "\n\n--- PROJECT FILES ---\n" + proj_corpus + "\n\n--- GRAPH EVIDENCE NODES (subtree) ---\n" + graph_ev
 
     mod_json = json.dumps(selected, ensure_ascii=False)

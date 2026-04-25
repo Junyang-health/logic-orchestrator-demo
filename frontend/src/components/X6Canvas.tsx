@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Graph } from "@antv/x6";
 import { Export } from "@antv/x6-plugin-export";
 import { register } from "@antv/x6-react-shape";
+import { LayoutGrid, ListCollapse, ListTree, Trash2 } from "lucide-react";
 import * as dagre from "dagre";
 
 // X6 ships default CSS separately.
 import "@antv/x6/dist/index.css";
 import MindmapReactNode from "./MindmapReactNode";
 import type { MindmapJson } from "../types/mindmap";
-import { combineGraphs } from "../lib/graphBranch";
+import { combineGraphs, dedupeMindmapGraph } from "../lib/graphBranch";
+import { computeHiddenNodeIds, getTopLevelCollapseRootIds, pruneCollapsedRoots } from "../lib/mindmapCollapse";
 import { normalizeMindmapNodeType } from "../lib/normalizeMindmapNodeType";
 import { applyReviewCommentBadgesToGraph } from "../lib/syncReviewCommentBadges";
+import { useI18n } from "../i18n/useI18n";
 import useUiStore from "../store/useUiStore";
 
 /** Dagre LR layout with generous gaps; call after node sizes are accurate to avoid overlap. */
@@ -49,8 +52,8 @@ function applyDagreLayout(graph: Graph) {
     if (!p) continue;
     n.position(p.x - n.getSize().width / 2, p.y - n.getSize().height / 2);
   }
-
-  graph.centerContent();
+  // Intentionally no centerContent() here — avoids jumping the view on node resize, reloads, and edits.
+  // User can double-click empty canvas to re-center.
 }
 
 /** Directed children map: parent id → child ids (one pass over edges). */
@@ -136,6 +139,58 @@ function applySubtreeSelectionHighlight(graph: Graph, selectedNodeId: string | n
   }
 }
 
+function cellSafeAddClass(cell: { addClass?: (c: string) => void } | null, cls: string) {
+  try {
+    cell?.addClass?.(cls);
+  } catch {
+    // ignore
+  }
+}
+
+function cellSafeRemoveClass(cell: { removeClass?: (c: string) => void } | null, cls: string) {
+  try {
+    cell?.removeClass?.(cls);
+  } catch {
+    // ignore
+  }
+}
+
+/** Clear node/edge “connection” and subtree highlight classes (for edge-click vs node selection UI). */
+function clearConnectionHighlightOnGraph(graph: Graph) {
+  for (const n of graph.getNodes()) {
+    cellSafeRemoveClass(n, "mm-node-dim");
+    cellSafeRemoveClass(n, "mm-node-selected");
+    cellSafeRemoveClass(n, "mm-node-connected");
+    cellSafeRemoveClass(n, "mm-node-subtree");
+  }
+  for (const e of graph.getEdges()) {
+    cellSafeRemoveClass(e, "mm-edge-dim");
+    cellSafeRemoveClass(e, "mm-edge-selected");
+    cellSafeRemoveClass(e, "mm-edge-connected");
+    cellSafeRemoveClass(e, "mm-edge-subtree");
+  }
+}
+
+function highlightForEdgeId(graph: Graph, edgeId: string) {
+  const edge = graph.getCellById(edgeId);
+  if (!edge || !edge.isEdge()) return;
+  clearConnectionHighlightOnGraph(graph);
+  for (const n of graph.getNodes()) cellSafeAddClass(n, "mm-node-dim");
+  for (const e of graph.getEdges()) cellSafeAddClass(e, "mm-edge-dim");
+  cellSafeRemoveClass(edge, "mm-edge-dim");
+  cellSafeAddClass(edge, "mm-edge-selected");
+  const src = (edge as { getSourceCellId?: () => string | null }).getSourceCellId?.();
+  const tgt = (edge as { getTargetCellId?: () => string | null }).getTargetCellId?.();
+  for (const id of [src, tgt]) {
+    if (!id) continue;
+    const n = graph.getCellById(id);
+    if (n?.isNode?.()) {
+      cellSafeRemoveClass(n, "mm-node-dim");
+      cellSafeAddClass(n, "mm-node-connected");
+    }
+  }
+}
+
 export default function X6Canvas(props: {
   mainGraph: MindmapJson | null;
   sandboxGraph: MindmapJson;
@@ -161,18 +216,37 @@ export default function X6Canvas(props: {
   /** Skip `/validate` scheduling while bulk-updating ephemeral review badge counts on `node.data`. */
   const reviewBadgeMuteValidationRef = useRef(false);
   const loadMindmapTimersRef = useRef<number[]>([]);
+  const lastDockLayoutKeyRef = useRef<string | null>(null);
   const clearLoadMindmapTimers = () => {
     for (const t of loadMindmapTimersRef.current) window.clearTimeout(t);
     loadMindmapTimersRef.current = [];
   };
+  const { t } = useI18n();
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const sandboxMode = useUiStore((s) => s.sandboxMode);
   const selectedNodeId = useUiStore((s) => s.selectedNode?.id ?? null);
   const theme = useUiStore((s) => s.theme);
   const reviewComments = useUiStore((s) => s.reviewComments);
   const rightDockOpen = useUiStore((s) => s.rightDockOpen);
-  const assistantDockOpen = useUiStore((s) => s.assistantDockOpen);
-  const assistantDockWidthPx = useUiStore((s) => s.assistantDockWidthPx);
-  const dockLayoutKey = `${rightDockOpen ? 1 : 0}|${assistantDockOpen ? 1 : 0}|${assistantDockWidthPx}`;
+  const canvasGridVisible = useUiStore((s) => s.canvasGridVisible);
+  const setCanvasGridVisible = useUiStore((s) => s.setCanvasGridVisible);
+  const collapsedSubtreeRootIds = useUiStore((s) => s.collapsedSubtreeRootIds);
+  const expandAllCollapsedSubtrees = useUiStore((s) => s.expandAllCollapsedSubtrees);
+  const collapseAllSubtreesToTopLevel = useUiStore((s) => s.collapseAllSubtreesToTopLevel);
+  const collapseReloadKey = useMemo(
+    () => [...collapsedSubtreeRootIds].sort().join("|"),
+    [collapsedSubtreeRootIds]
+  );
+  const canCollapseToTop = useMemo(() => {
+    const main = props.mainGraph;
+    const san = props.sandboxGraph;
+    if (!main && (!san || san.nodes.length === 0)) return false;
+    const merged = combineGraphs(main, san);
+    const allIds = new Set(merged.nodes.map((n) => n.id));
+    return getTopLevelCollapseRootIds(allIds, merged.edges).length > 0;
+  }, [props.mainGraph, props.sandboxGraph]);
+  const hasCollapsedSubtrees = collapsedSubtreeRootIds.length > 0;
+  const dockLayoutKey = `${rightDockOpen ? 1 : 0}`;
 
   const reactShapeRegistered = useMemo(() => {
     // Register once per module instance.
@@ -191,8 +265,9 @@ export default function X6Canvas(props: {
     hydratingRef.current = true;
     graph.clearCells();
 
+    const mm = dedupeMindmapGraph(mindmap);
     const seenNodeIds = new Set<string>();
-    for (const n of mindmap.nodes) {
+    for (const n of mm.nodes) {
       if (seenNodeIds.has(n.id)) continue;
       seenNodeIds.add(n.id);
       graph.addNode({
@@ -215,7 +290,7 @@ export default function X6Canvas(props: {
     }
 
     const seenEdgeKeys = new Set<string>();
-    for (const e of mindmap.edges) {
+    for (const e of mm.edges) {
       const ek = `${e.source}→${e.target}::${e.label ?? ""}`;
       if (seenEdgeKeys.has(ek)) continue;
       seenEdgeKeys.add(ek);
@@ -333,6 +408,14 @@ export default function X6Canvas(props: {
     graphRef.current = graph;
     graph.use(new Export());
     props.onGraphReady?.(graph);
+
+    if (!useUiStore.getState().canvasGridVisible) {
+      try {
+        graph.grid.hide();
+      } catch {
+        /* ignore */
+      }
+    }
 
     // Bridge sandbox mode into graph context for X6 internals.
     (graph as any).prop?.("sandboxContext", sandboxMode);
@@ -529,61 +612,18 @@ export default function X6Canvas(props: {
       graph.centerContent();
     });
 
-    const safeAddClass = (cell: any, cls: string) => {
-      try {
-        cell?.addClass?.(cls);
-      } catch {
-        // ignore
-      }
-    };
-    const safeRemoveClass = (cell: any, cls: string) => {
-      try {
-        cell?.removeClass?.(cls);
-      } catch {
-        // ignore
-      }
-    };
-
-    const clearConnectionHighlight = () => {
-      for (const n of graph.getNodes()) {
-        safeRemoveClass(n, "mm-node-dim");
-        safeRemoveClass(n, "mm-node-selected");
-        safeRemoveClass(n, "mm-node-connected");
-        safeRemoveClass(n, "mm-node-subtree");
-      }
-      for (const e of graph.getEdges()) {
-        safeRemoveClass(e, "mm-edge-dim");
-        safeRemoveClass(e, "mm-edge-selected");
-        safeRemoveClass(e, "mm-edge-connected");
-        safeRemoveClass(e, "mm-edge-subtree");
-      }
-    };
-
-    const highlightForEdge = (edgeId: string) => {
-      const edge = graph.getCellById(edgeId);
-      if (!edge || !edge.isEdge()) return;
-      clearConnectionHighlight();
-      for (const n of graph.getNodes()) safeAddClass(n, "mm-node-dim");
-      for (const e of graph.getEdges()) safeAddClass(e, "mm-edge-dim");
-      safeRemoveClass(edge, "mm-edge-dim");
-      safeAddClass(edge, "mm-edge-selected");
-      const src = (edge as any).getSourceCellId?.();
-      const tgt = (edge as any).getTargetCellId?.();
-      for (const id of [src, tgt]) {
-        if (!id) continue;
-        const n = graph.getCellById(id);
-        if (n?.isNode?.()) {
-          safeRemoveClass(n, "mm-node-dim");
-          safeAddClass(n, "mm-node-connected");
-        }
-      }
-    };
-
     graph.on("edge:click", ({ edge }) => {
-      highlightForEdge(edge.id);
+      highlightForEdgeId(graph, edge.id);
+      setSelectedEdgeId(edge.id);
     });
     graph.on("blank:click", () => {
-      clearConnectionHighlight();
+      setSelectedEdgeId(null);
+      clearConnectionHighlightOnGraph(graph);
+      applySubtreeSelectionHighlight(graph, useUiStore.getState().selectedNode?.id ?? null);
+    });
+    graph.on("node:click", () => {
+      setSelectedEdgeId(null);
+      clearConnectionHighlightOnGraph(graph);
       applySubtreeSelectionHighlight(graph, useUiStore.getState().selectedNode?.id ?? null);
     });
 
@@ -637,11 +677,15 @@ export default function X6Canvas(props: {
       const srcId = edge.getSourceCellId();
       const tgtId = edge.getTargetCellId();
       if (!srcId || !tgtId) return;
-      const relationship =
-        (edge.getLabels?.()?.[0] as any)?.attrs?.label?.text?.toString?.() ||
-        (edge as any).getData?.()?.label ||
+      const st = useUiStore.getState();
+      const combined = combineGraphs(st.mainGraph, st.sandboxGraph);
+      const hit = combined.edges.find((e) => e.source === srcId && e.target === tgtId);
+      const fromCanvas =
+        (edge.getLabels?.()?.[0] as { attrs?: { label?: { text?: string } } })?.attrs?.label?.text?.toString?.() ||
+        (edge as { getData?: () => { label?: string } }).getData?.()?.label ||
         "";
-      useUiStore.getState().removeEdge(srcId, tgtId, relationship);
+      const label = hit?.label ?? fromCanvas;
+      st.removeEdge(srcId, tgtId, label);
     });
 
     // Starter graph: root hub branches to evidence + inferred (evidence supports inferred).
@@ -728,26 +772,57 @@ export default function X6Canvas(props: {
     });
   }, [reviewComments]);
 
+  /**
+   * When the right dock (or assistant visibility) changes, flex reflow is often a frame or two late.
+   * If we `resize` with a stale width, X6 only paints the old bbox — the new strip looks like a dark void.
+   * We re-measure with rAF + short timeouts and call `centerContent` when the right dock toggles.
+   */
   useEffect(() => {
     const el = containerRef.current;
     const g = graphRef.current;
     if (!el || !g) return;
-    let t1 = 0;
-    let t2 = 0;
-    const run = () => {
+
+    const prev = lastDockLayoutKeyRef.current;
+    const current = dockLayoutKey;
+    lastDockLayoutKeyRef.current = current;
+    const rightDockToggled = prev != null && prev.split("|")[0] !== current.split("|")[0];
+
+    const apply = (alsoCenter: boolean) => {
       const rect = el.getBoundingClientRect();
       const w = Math.max(1, Math.round(rect.width));
       const h = Math.max(1, Math.round(rect.height));
       if (typeof (g as any).resize === "function") {
         (g as any).resize(w, h);
       }
+      if (alsoCenter && typeof (g as any).centerContent === "function") {
+        try {
+          (g as any).centerContent();
+        } catch {
+          /* ignore */
+        }
+      }
     };
-    t1 = requestAnimationFrame(() => {
-      t2 = requestAnimationFrame(run);
+
+    // First paint after state update (may still be old width)
+    apply(rightDockToggled);
+    let raf0 = 0;
+    let raf1 = 0;
+    let raf2 = 0;
+    raf0 = requestAnimationFrame(() => {
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => apply(rightDockToggled));
+      });
     });
+
+    const t1 = window.setTimeout(() => apply(rightDockToggled), 50);
+    const t2 = window.setTimeout(() => apply(rightDockToggled), 180);
+
     return () => {
-      cancelAnimationFrame(t1);
-      cancelAnimationFrame(t2);
+      cancelAnimationFrame(raf0);
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
     };
   }, [dockLayoutKey]);
 
@@ -781,6 +856,65 @@ export default function X6Canvas(props: {
   }, [sandboxMode]);
 
   useEffect(() => {
+    const g = graphRef.current;
+    if (!g) return;
+    try {
+      if (canvasGridVisible) g.grid.show();
+      else g.grid.hide();
+    } catch {
+      /* ignore */
+    }
+  }, [canvasGridVisible]);
+
+  const removeMindmapEdgeFromStoreForCell = useCallback((g: Graph, edgeId: string) => {
+    const cell = g.getCellById(edgeId);
+    if (!cell?.isEdge?.()) {
+      setSelectedEdgeId(null);
+      return;
+    }
+    const src = cell.getSourceCellId();
+    const tgt = cell.getTargetCellId();
+    if (!src || !tgt) {
+      setSelectedEdgeId(null);
+      return;
+    }
+    const st = useUiStore.getState();
+    const hit = combineGraphs(st.mainGraph, st.sandboxGraph).edges.find(
+      (e) => e.source === src && e.target === tgt
+    );
+    if (!hit) {
+      setSelectedEdgeId(null);
+      return;
+    }
+    st.removeEdge(src, tgt, hit.label ?? "");
+    setSelectedEdgeId(null);
+    clearConnectionHighlightOnGraph(g);
+    applySubtreeSelectionHighlight(g, st.selectedNode?.id ?? null);
+  }, []);
+
+  const removeSelectedEdge = useCallback(() => {
+    if (!selectedEdgeId) return;
+    const g = graphRef.current;
+    if (!g) return;
+    removeMindmapEdgeFromStoreForCell(g, selectedEdgeId);
+  }, [selectedEdgeId, removeMindmapEdgeFromStoreForCell]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Backspace" && e.key !== "Delete") return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("input, textarea, [contenteditable='true']")) return;
+      if (!selectedEdgeId) return;
+      const g = graphRef.current;
+      if (!g) return;
+      e.preventDefault();
+      removeMindmapEdgeFromStoreForCell(g, selectedEdgeId);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedEdgeId, removeMindmapEdgeFromStoreForCell]);
+
+  useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
     const main = props.mainGraph;
@@ -789,28 +923,36 @@ export default function X6Canvas(props: {
 
     /** Must match combineGraphs(main, sandbox): same id cannot appear twice or X6 stacks duplicate cells. */
     const merged = combineGraphs(main, sandbox);
+    const allIds = new Set(merged.nodes.map((n) => n.id));
+    const roots = pruneCollapsedRoots(useUiStore.getState().collapsedSubtreeRootIds, allIds);
+    const hidden = computeHiddenNodeIds(new Set(roots), merged.edges, allIds);
     const sandboxIds = new Set(sandbox.nodes.map((n) => n.id));
     const sandboxEdgeKeys = new Set(
       sandbox.edges.map((e) => `${e.source}→${e.target}::${e.label ?? ""}`)
     );
     const cMap = clusterByNodeIdRef.current;
     const combined: MindmapJson = {
-      nodes: merged.nodes.map((n) => ({
-        ...n,
-        status: (sandboxIds.has(n.id) ? "draft" : (n.status ?? "firm")) as MindmapJson["nodes"][number]["status"],
-        clusterId: sandboxIds.has(n.id) ? (n.clusterId ?? "sandbox") : cMap[n.id]
-      })),
-      edges: merged.edges.map((e) => {
-        const k = `${e.source}→${e.target}::${e.label ?? ""}`;
-        return {
-          ...e,
-          status: (sandboxEdgeKeys.has(k) ? "draft" : (e.status ?? "firm")) as MindmapJson["edges"][number]["status"]
-        };
-      })
+      nodes: merged.nodes
+        .filter((n) => !hidden.has(n.id))
+        .map((n) => ({
+          ...n,
+          status: (sandboxIds.has(n.id) ? "draft" : (n.status ?? "firm")) as MindmapJson["nodes"][number]["status"],
+          clusterId: sandboxIds.has(n.id) ? (n.clusterId ?? "sandbox") : cMap[n.id]
+        })),
+      edges: merged.edges
+        .filter((e) => !hidden.has(e.source) && !hidden.has(e.target))
+        .map((e) => {
+          const k = `${e.source}→${e.target}::${e.label ?? ""}`;
+          return {
+            ...e,
+            status: (sandboxEdgeKeys.has(k) ? "draft" : (e.status ?? "firm")) as MindmapJson["edges"][number]["status"]
+          };
+        })
     };
     loadMindmap(graph, combined);
+    setSelectedEdgeId(null);
     applySubtreeSelectionHighlight(graph, useUiStore.getState().selectedNode?.id ?? null);
-  }, [props.mainGraph, props.sandboxGraph]);
+  }, [props.mainGraph, props.sandboxGraph, collapseReloadKey]);
 
   /** Patch cluster ids without full graph reload (main graph effect ignores cluster-only updates). */
   useEffect(() => {
@@ -830,6 +972,68 @@ export default function X6Canvas(props: {
     }
   }, [props.clusterByNodeId, props.sandboxGraph]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full min-h-0 min-w-0 flex-1">
+      <div ref={containerRef} className="h-full w-full min-h-0 min-w-0" />
+      <div
+        className="pointer-events-auto absolute right-2 top-2 z-[45] flex max-w-[min(100%,20rem)] flex-col items-stretch gap-1.5 sm:right-3 sm:top-3"
+        role="toolbar"
+        aria-label={t("canvas_subtree_bar_aria")}
+      >
+        <div className="flex flex-wrap items-stretch justify-end gap-1 rounded-2xl border border-slate-200/90 bg-white/95 p-1 shadow-md backdrop-blur-sm dark:border-slate-600/90 dark:bg-slate-900/95">
+          <button
+            type="button"
+            disabled={!hasCollapsedSubtrees}
+            className="inline-flex min-h-[1.75rem] shrink-0 items-center gap-1 rounded-xl border border-transparent bg-transparent px-2 py-1 text-[10px] font-semibold text-sky-800 hover:bg-sky-100/90 disabled:cursor-not-allowed disabled:opacity-40 dark:text-sky-200 dark:hover:bg-sky-900/50"
+            onClick={() => expandAllCollapsedSubtrees()}
+            title={hasCollapsedSubtrees ? t("canvas_expand_all_subtrees_title") : t("canvas_expand_all_subtrees_disabled")}
+            aria-label={hasCollapsedSubtrees ? t("canvas_expand_all_subtrees_title") : t("canvas_expand_all_subtrees_disabled")}
+          >
+            <ListTree className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="whitespace-nowrap">{t("canvas_expand_all_subtrees")}</span>
+          </button>
+          <button
+            type="button"
+            disabled={!canCollapseToTop}
+            className="inline-flex min-h-[1.75rem] shrink-0 items-center gap-1 rounded-xl border border-transparent bg-transparent px-2 py-1 text-[10px] font-semibold text-violet-900 hover:bg-violet-100/80 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-200 dark:hover:bg-violet-950/50"
+            onClick={() => collapseAllSubtreesToTopLevel()}
+            title={canCollapseToTop ? t("canvas_collapse_to_top_title") : t("canvas_collapse_to_top_disabled")}
+            aria-label={canCollapseToTop ? t("canvas_collapse_to_top_title") : t("canvas_collapse_to_top_disabled")}
+          >
+            <ListCollapse className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="whitespace-nowrap">{t("canvas_collapse_to_top")}</span>
+          </button>
+        </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full border border-rose-100/50 bg-stone-50/90 px-2.5 py-1.5 text-[10px] font-medium text-stone-600 shadow-pastel backdrop-blur-sm hover:bg-rose-50/80 dark:border-violet-800/50 dark:bg-[#2a2633]/90 dark:text-stone-200 dark:hover:bg-[#34303c]"
+            onClick={() => setCanvasGridVisible(!canvasGridVisible)}
+            title={canvasGridVisible ? t("canvas_grid_hide") : t("canvas_grid_show")}
+            aria-pressed={canvasGridVisible}
+          >
+            <LayoutGrid className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+            {canvasGridVisible ? t("canvas_grid_off") : t("canvas_grid_on")}
+          </button>
+        </div>
+      </div>
+      {selectedEdgeId ? (
+        <div className="pointer-events-auto absolute bottom-3 left-1/2 z-30 max-w-[min(96%,28rem)] -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-2 text-[10px] text-slate-800 shadow-pastel backdrop-blur-sm dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-100">
+            <span className="shrink-0 text-slate-500 dark:text-slate-400">{t("edge_selected_hint")}</span>
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200/80 bg-rose-50/90 px-2 py-1 font-medium text-rose-800 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/60 dark:text-rose-100 dark:hover:bg-rose-900/50"
+              onClick={removeSelectedEdge}
+              aria-label={t("edge_delete_aria")}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              {t("edge_delete")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 

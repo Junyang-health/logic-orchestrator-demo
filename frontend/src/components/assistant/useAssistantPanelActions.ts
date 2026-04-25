@@ -24,6 +24,8 @@ export type AssistantPanelActionsCtx = {
   persona: string;
   webSearchQuery: string;
   skillsWebSearch: boolean;
+  /** Project file ids to attach to chat/apply; empty = do not send source text. */
+  assistantSourceFileIds: string[];
   payloadSkills: { name: string; instruction: string; enabled: boolean }[];
   builtinPayload: { webSearch: boolean; financialAnalyst: boolean };
   sandboxMode: boolean;
@@ -92,7 +94,6 @@ export type AssistantPanelActionsCtx = {
   loadMainGraph: (graph: MindmapJson, opts?: LoadMainGraphOptions) => void;
   clearSandbox: () => void;
   setSandboxMode: (v: boolean) => void;
-  setAssistantActive: (v: boolean) => void;
 };
 
 /**
@@ -113,6 +114,10 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
     c.setError("");
     c.setChatBusy(true);
     try {
+      const projectId =
+        typeof localStorage !== "undefined" ? (localStorage.getItem("mindmap_project_id") || "").trim() : "";
+      const src = c.assistantSourceFileIds;
+      const includeSources = src.length > 0;
       const apiMessages = nextMessages.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch(`${c.backendBase}/assistant/chat`, {
         method: "POST",
@@ -130,7 +135,11 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
             ...c.payloadSkills
           ],
           builtin_skills: c.builtinPayload,
-          sandbox_mode: c.sandboxMode
+          sandbox_mode: c.sandboxMode,
+          project_id: projectId || null,
+          include_project_sources: includeSources,
+          source_file_ids: includeSources ? src : [],
+          source_max_chars: 40_000
         })
       });
       if (!res.ok) {
@@ -161,6 +170,10 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
     c.setApplyBusy(true);
     c.setError("");
     try {
+      const projectId =
+        typeof localStorage !== "undefined" ? (localStorage.getItem("mindmap_project_id") || "").trim() : "";
+      const src = c.assistantSourceFileIds;
+      const includeSources = src.length > 0;
       const apiMessages = c.messages.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch(`${c.backendBase}/assistant/apply`, {
         method: "POST",
@@ -177,7 +190,11 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
             ...c.payloadSkills
           ],
           builtin_skills: c.builtinPayload,
-          sandbox_mode: c.sandboxMode || c.sandboxHasDrafts
+          sandbox_mode: c.sandboxMode || c.sandboxHasDrafts,
+          project_id: projectId || null,
+          include_project_sources: includeSources,
+          source_file_ids: includeSources ? src : [],
+          source_max_chars: 40_000
         })
       });
       if (!res.ok) {
@@ -188,10 +205,9 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       const data = (await res.json()) as { mindmap: MindmapJson };
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setSandboxMode(false);
-      c.setAssistantActive(false);
       c.setApplyInstruction("");
       useUiStore.getState().setSelectedNode(null);
+      useUiStore.getState().closeAssistantSession();
     } catch (e) {
       c.setError(e instanceof Error ? e.message : "Apply request failed");
     } finally {
@@ -214,6 +230,10 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
     c.setApplyBusy(true);
     c.setError("");
     try {
+      const projectId =
+        typeof localStorage !== "undefined" ? (localStorage.getItem("mindmap_project_id") || "").trim() : "";
+      const src = c.assistantSourceFileIds;
+      const includeSources = src.length > 0;
       const apiMessages = [
         ...c.messages.map((m) => ({ role: m.role, content: m.content })),
         { role: "user" as const, content: `Apply instruction (highest priority): ${instr}` }
@@ -233,7 +253,11 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
             ...c.payloadSkills
           ],
           builtin_skills: c.builtinPayload,
-          sandbox_mode: c.sandboxMode || c.sandboxHasDrafts
+          sandbox_mode: c.sandboxMode || c.sandboxHasDrafts,
+          project_id: projectId || null,
+          include_project_sources: includeSources,
+          source_file_ids: includeSources ? src : [],
+          source_max_chars: 40_000
         })
       });
       if (!res.ok) {
@@ -244,10 +268,9 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       const data = (await res.json()) as { mindmap: MindmapJson };
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setSandboxMode(false);
-      c.setAssistantActive(false);
       c.setApplyInstruction("");
       useUiStore.getState().setSelectedNode(null);
+      useUiStore.getState().closeAssistantSession();
     } catch (e) {
       c.setError(e instanceof Error ? e.message : "Apply request failed");
     } finally {
@@ -343,9 +366,8 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       c.setSimReport(data.report || "");
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setSandboxMode(false);
-      c.setAssistantActive(false);
       useUiStore.getState().setSelectedNode(null);
+      useUiStore.getState().closeAssistantSession();
     } catch (e) {
       c.setError(e instanceof Error ? e.message : "Simulation request failed");
     } finally {
@@ -477,9 +499,8 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       c.setSimReport(data.report || "");
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setSandboxMode(false);
-      c.setAssistantActive(false);
       useUiStore.getState().setSelectedNode(null);
+      useUiStore.getState().closeAssistantSession();
       c.setBsScenarios(null);
       c.setBsSelectedScenarioIds(new Set());
       c.setBsRunBundle(null);
@@ -636,9 +657,8 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       c.setSimReport(data.report || "");
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setSandboxMode(false);
-      c.setAssistantActive(false);
       useUiStore.getState().setSelectedNode(null);
+      useUiStore.getState().closeAssistantSession();
       c.setMeceScanBundle(null);
       c.setMeceSelectedMods(new Set());
       c.setMeceEvidenceBundle(null);
@@ -797,12 +817,11 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       const data = (await res.json()) as { mindmap: MindmapJson };
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setSandboxMode(false);
-      c.setAssistantActive(false);
       c.setRtProposal(null);
       c.setRtConfirmApply(false);
       c.setRtTranscript([]);
       useUiStore.getState().setSelectedNode(null);
+      useUiStore.getState().closeAssistantSession();
     } catch (e) {
       c.setError(e instanceof Error ? e.message : "Apply request failed");
     } finally {
