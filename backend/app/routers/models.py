@@ -9,7 +9,11 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 
 class ModelBody(BaseModel):
-    model: str = Field(..., min_length=1, description="Anthropic model id, e.g. claude-sonnet-4-20250514")
+    model: str = Field(
+        ...,
+        min_length=1,
+        description="Provider model id, e.g. gemini-2.5-flash, deepseek:deepseek-chat, kimi-k2.5, moonshot-v1-8k",
+    )
 
 
 class ModelsResponse(BaseModel):

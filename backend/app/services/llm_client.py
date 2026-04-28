@@ -80,6 +80,20 @@ def _looks_like_deepseek_model(model_id: str) -> bool:
     return m.startswith("deepseek:") or m.startswith("deepseek-") or m.startswith("deepseek/")
 
 
+def _looks_like_kimi_model(model_id: str) -> bool:
+    """Moonshot Open Platform (Kimi): kimi-*, moonshot-*, or kimi:/kimi/ prefix."""
+    m = (model_id or "").strip().lower()
+    if not m:
+        return False
+    if m.startswith("kimi:") or m.startswith("kimi/"):
+        return True
+    if m.startswith("moonshot-"):
+        return True
+    if m.startswith("kimi-"):
+        return True
+    return False
+
+
 def _normalize_gemini_model(model_id: str) -> str:
     m = (model_id or "").strip()
     if not m:
@@ -98,6 +112,20 @@ def _normalize_deepseek_model(model_id: str) -> str:
         return m.split(":", 1)[1].strip() or "deepseek-chat"
     if ml.startswith("deepseek/"):
         return m.split("/", 1)[1].strip() or "deepseek-chat"
+    return m
+
+
+def _normalize_kimi_model(model_id: str) -> str:
+    """Map registry id to Moonshot API model name (see platform.moonshot.ai docs)."""
+    default = (os.getenv("MOONSHOT_DEFAULT_MODEL") or "kimi-k2.5").strip()
+    m = (model_id or "").strip()
+    if not m:
+        return default or "kimi-k2.5"
+    ml = m.lower()
+    if ml.startswith("kimi:"):
+        return m.split(":", 1)[1].strip() or default
+    if ml.startswith("kimi/"):
+        return m.split("/", 1)[1].strip() or default
     return m
 
 
@@ -128,8 +156,9 @@ class LlmClient:
 
     Policy (as configured for this project):
     - Gemini is the preferred provider (default model ids like "gemini-...").
-    - DeepSeek is the backup provider (model ids like "deepseek:deepseek-chat").
-    - Anthropic is intentionally NOT used unless you explicitly select an Anthropic model id and provide a key.
+    - DeepSeek is a backup (model ids like "deepseek:deepseek-chat").
+    - Kimi / Moonshot is supported (model ids like "kimi-k2.5", "kimi:...", "moonshot-v1-8k") with MOONSHOT_API_KEY.
+    - Anthropic is intentionally NOT wired through this client for JSON/chat (use Gemini/Kimi/DeepSeek keys).
     """
 
     def __init__(self, config: LlmConfig | None = None):
@@ -157,6 +186,12 @@ class LlmClient:
 
     def _deepseek_base_url(self) -> str:
         return (os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com").strip().rstrip("/")
+
+    def _moonshot_api_key(self) -> str:
+        return (os.getenv("MOONSHOT_API_KEY") or os.getenv("KIMI_API_KEY") or "").strip()
+
+    def _moonshot_base_url(self) -> str:
+        return (os.getenv("MOONSHOT_BASE_URL") or "https://api.moonshot.ai/v1").strip().rstrip("/")
 
     def _fallback_to_gemini_if_available(self) -> bool:
         return bool(self._gemini_api_key())
@@ -220,6 +255,39 @@ class LlmClient:
         except Exception as e:  # pragma: no cover
             raise RuntimeError(f"Unexpected DeepSeek response format: {data!r}") from e
 
+    def _moonshot_chat_completion(
+        self, *, model: str, system: str, user: str, max_output_tokens: int | None = None
+    ) -> str:
+        api_key = self._moonshot_api_key()
+        if not api_key:
+            raise RuntimeError("Missing MOONSHOT_API_KEY (or KIMI_API_KEY) env var")
+
+        url = f"{self._moonshot_base_url()}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        base = int(max_output_tokens) if max_output_tokens is not None else int(self._cfg.max_tokens)
+        mt = min(16384, max(256, base))
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.2,
+            "max_tokens": mt,
+        }
+
+        with httpx.Client(timeout=120.0) as client:
+            r = client.post(url, headers=headers, json=payload)
+            if r.status_code == 400:
+                detail = (r.text or "")[:1200]
+                raise RuntimeError(f"Moonshot (Kimi) request rejected (400): {detail}")
+            r.raise_for_status()
+            data = r.json()
+        try:
+            return str(data["choices"][0]["message"]["content"] or "")
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(f"Unexpected Moonshot response format: {data!r}") from e
+
     def describe_image(self, *, image_bytes: bytes, mime_type: str, prompt: str) -> str:
         model_id = self._cfg.model
         if _looks_like_gemini_model(model_id) and self._gemini_api_key():
@@ -271,6 +339,27 @@ class LlmClient:
                 return (getattr(resp, "text", None) or "").strip()
             raise RuntimeError("DeepSeek does not support image inputs; configure GEMINI_API_KEY")
 
+        if _looks_like_kimi_model(model_id):
+            if self._fallback_to_gemini_if_available():
+                client = self._get_gemini()
+                model = _normalize_gemini_model(os.getenv("GEMINI_VISION_MODEL") or "gemini-2.5-flash")
+                try:
+                    from google.genai import types  # type: ignore
+
+                    contents = [
+                        types.Part.from_text(prompt),
+                        types.Part.from_bytes(data=image_bytes, mime_type=(mime_type or "image/jpeg")),
+                    ]
+                except Exception:
+                    b64 = base64.b64encode(image_bytes).decode("ascii")
+                    contents = [prompt, {"inline_data": {"mime_type": mime_type or "image/jpeg", "data": b64}}]
+                resp = client.models.generate_content(model=model, contents=contents)
+                return (getattr(resp, "text", None) or "").strip()
+            raise RuntimeError(
+                "Image analysis with Kimi as active model requires GEMINI_API_KEY for vision routing "
+                "(or switch the active model to a Gemini vision model)."
+            )
+
         # Anthropic is intentionally disabled for this project.
         raise RuntimeError("No vision-capable provider available. Configure GEMINI_API_KEY.")
 
@@ -279,11 +368,26 @@ class LlmClient:
         model_id = self._cfg.model
         out_tok = max_output_tokens
 
-        # Enforce fallback policy: Gemini preferred, DeepSeek backup.
+        # Enforce fallback policy: Gemini preferred, then DeepSeek, then Moonshot (Kimi).
         if _looks_like_gemini_model(model_id) and (not self._gemini_api_key()) and self._fallback_to_deepseek_if_available():
             model_id = "deepseek:deepseek-chat"
-        if _looks_like_gemini_model(model_id) and (not self._gemini_api_key()) and (not self._fallback_to_deepseek_if_available()):
-            raise RuntimeError("Missing GEMINI_API_KEY (or GOOGLE_API_KEY) and no DEEPSEEK_API_KEY configured")
+        elif (
+            _looks_like_gemini_model(model_id)
+            and (not self._gemini_api_key())
+            and (not self._fallback_to_deepseek_if_available())
+            and self._moonshot_api_key()
+        ):
+            model_id = "kimi:" + (os.getenv("MOONSHOT_DEFAULT_MODEL") or "kimi-k2.5").strip()
+        elif (
+            _looks_like_gemini_model(model_id)
+            and (not self._gemini_api_key())
+            and (not self._fallback_to_deepseek_if_available())
+            and (not self._moonshot_api_key())
+        ):
+            raise RuntimeError(
+                "Missing GEMINI_API_KEY (or GOOGLE_API_KEY). "
+                "Configure DEEPSEEK_API_KEY or MOONSHOT_API_KEY (Kimi) for fallback."
+            )
         if _looks_like_deepseek_model(model_id):
             model = _normalize_deepseek_model(model_id)
             prompt_user = "\n".join([user.strip(), "", "Return JSON only. No markdown."]).strip()
@@ -306,11 +410,47 @@ class LlmClient:
                         continue
                     break
 
-            # If DeepSeek is temporarily unavailable, fall back to Gemini (preferred).
+            # If DeepSeek is temporarily unavailable, fall back to Gemini or Kimi.
+            if last_err and _is_transient_http_error(last_err) and self._fallback_to_gemini_if_available():
+                model_id = _normalize_gemini_model(os.getenv("GEMINI_MODEL") or "gemini-2.5-flash")
+            elif last_err and _is_transient_http_error(last_err) and self._moonshot_api_key():
+                text = self._moonshot_chat_completion(
+                    model=_normalize_kimi_model(os.getenv("MOONSHOT_DEFAULT_MODEL") or "kimi-k2.5"),
+                    system=system.strip(),
+                    user=prompt_user,
+                    max_output_tokens=out_tok,
+                )
+                raw = _strip_code_fences(text.strip())
+                return _json_loads_lenient(raw)
+            else:
+                raise RuntimeError(str(last_err) if last_err else "DeepSeek request failed")
+
+        if _looks_like_kimi_model(model_id):
+            model = _normalize_kimi_model(model_id)
+            prompt_user = "\n".join([user.strip(), "", "Return JSON only. No markdown."]).strip()
+
+            last_err: Exception | None = None
+            for attempt in range(4):
+                try:
+                    text = self._moonshot_chat_completion(
+                        model=model,
+                        system=system.strip(),
+                        user=prompt_user,
+                        max_output_tokens=out_tok,
+                    )
+                    raw = _strip_code_fences(text.strip())
+                    return _json_loads_lenient(raw)
+                except Exception as e:
+                    last_err = e
+                    if _is_transient_http_error(e) and attempt < 3:
+                        time.sleep((0.8 * (2**attempt)) + random.random() * 0.3)
+                        continue
+                    break
+
             if last_err and _is_transient_http_error(last_err) and self._fallback_to_gemini_if_available():
                 model_id = _normalize_gemini_model(os.getenv("GEMINI_MODEL") or "gemini-2.5-flash")
             else:
-                raise RuntimeError(str(last_err) if last_err else "DeepSeek request failed")
+                raise RuntimeError(str(last_err) if last_err else "Moonshot (Kimi) request failed")
 
         if _looks_like_gemini_model(model_id) and self._gemini_api_key():
             client = self._get_gemini()
@@ -353,9 +493,8 @@ class LlmClient:
                         continue
                     break
 
-            # If Gemini is overloaded, fall back to DeepSeek if configured.
+            # If Gemini is overloaded, fall back to DeepSeek or Kimi if configured.
             if last_err and _is_transient_gemini_overload(last_err) and self._fallback_to_deepseek_if_available():
-                # Run once through DeepSeek (do not require changing active model state).
                 text = self._deepseek_chat_completion(
                     model=_normalize_deepseek_model("deepseek:deepseek-chat"),
                     system=system.strip(),
@@ -364,8 +503,18 @@ class LlmClient:
                 )
                 raw = _strip_code_fences(text.strip())
                 return _json_loads_lenient(raw)
+            if last_err and _is_transient_gemini_overload(last_err) and self._moonshot_api_key():
+                text = self._moonshot_chat_completion(
+                    model=_normalize_kimi_model(os.getenv("MOONSHOT_DEFAULT_MODEL") or "kimi-k2.5"),
+                    system=system.strip(),
+                    user="\n".join([user.strip(), "", "Return JSON only. No markdown."]).strip(),
+                    max_output_tokens=out_tok,
+                )
+                raw = _strip_code_fences(text.strip())
+                return _json_loads_lenient(raw)
             raise RuntimeError(str(last_err) if last_err else "Gemini request failed")
 
-        # Anthropic is intentionally disabled for this project.
-        raise RuntimeError("No supported LLM provider available. Configure GEMINI_API_KEY (preferred) or DEEPSEEK_API_KEY.")
+        raise RuntimeError(
+            "No supported LLM provider available. Configure GEMINI_API_KEY, DEEPSEEK_API_KEY, or MOONSHOT_API_KEY (Kimi)."
+        )
 

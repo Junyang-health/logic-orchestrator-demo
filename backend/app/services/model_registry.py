@@ -1,5 +1,5 @@
 """
-Runtime registry for Anthropic base model IDs: list, add, remove, select.
+Runtime registry for LLM model IDs (Gemini, DeepSeek, Kimi/Moonshot, etc.).
 Persisted to disk so choices survive server restarts.
 """
 
