@@ -6,9 +6,10 @@ Persisted to disk so choices survive server restarts.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from threading import Lock
+
+from app.services.llm_provider_keys import default_model_from_env, safe_resolve_chat_model_id
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _SETTINGS_FILE = _DATA_DIR / "model_settings.json"
@@ -18,9 +19,8 @@ _state: dict | None = None
 
 
 def _default_model() -> str:
-    # Provider-agnostic default. If you want Gemini by default, set GEMINI_MODEL
-    # (and GEMINI_API_KEY) in the environment.
-    return (os.getenv("BASE_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+    """First boot / empty list default: follows keys in env (Gemini, DeepSeek, or Kimi)."""
+    return default_model_from_env()
 
 
 def _load() -> dict:
@@ -44,7 +44,14 @@ def _load() -> dict:
                 current = (str(current).strip() if current else "") or default
                 if current not in models:
                     current = models[0]
-                _state = {"models": models, "current": current}
+                fixed = safe_resolve_chat_model_id(current)
+                models2 = list(models)
+                if fixed not in models2:
+                    models2 = [fixed, *models2]
+                changed = fixed != current or models2 != models
+                _state = {"models": models2, "current": fixed}
+                if changed:
+                    _save()
             except (OSError, json.JSONDecodeError, TypeError):
                 _state = {"models": [default], "current": default}
         else:

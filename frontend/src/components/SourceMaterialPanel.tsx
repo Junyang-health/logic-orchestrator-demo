@@ -6,66 +6,21 @@ import useUiStore from "../store/useUiStore";
 import { combineGraphs } from "../lib/graphBranch";
 import { classifySourceKind } from "../types/sourceMaterial";
 import type { MindmapJson } from "../types/mindmap";
+import { formatBytes } from "../lib/formatBytes";
+import {
+  markCanvasAutoFetched,
+  shouldSkipCanvasAutoFetch,
+  clearCanvasAutoFetchForProject
+} from "./sourceMaterial/canvasAutoFetch";
+import { PREV_PROJECT_SESSION_KEY } from "./sourceMaterial/projectSessionKeys";
+import type { SourceSortKey, StoredProjectFile } from "./sourceMaterial/sourceFileSort";
+import { sortStoredProjectFiles } from "./sourceMaterial/sourceFileSort";
+import { SOURCE_FILE_INPUT_ACCEPT } from "./sourceMaterial/sourceFileAccept";
+import { SourceMaterialStoredFilesBlock } from "./sourceMaterial/SourceMaterialStoredFilesBlock";
 
-/**
- * When the right dock is hidden, `AppRightDock` unmounts. On show, this panel remounts and the
- * projectId effect would run again — refetching `/mindmap/canvas` and `loadMainGraph` while X6
- * still holds the live graph, which races the react-shape layer and shows stacked duplicate nodes.
- * We only auto-fetch when the project id actually changes, not on every remount.
- */
-let lastAutoFetchedCanvasProjectId: string | null = null;
-
-const PREV_PROJECT_SESSION_KEY = "mindmap_prev_project_id";
+/** Canvas auto-fetch guard: see `sourceMaterial/canvasAutoFetch.ts` (avoids duplicate nodes on dock remount). */
 
 type Project = { id: string; name: string };
-type StoredFile = {
-  id: string;
-  filename: string;
-  size: number;
-  content_type?: string | null;
-  uploaded_at_ms: number;
-  origin?: string;
-};
-
-type SourceSortKey = "date_new" | "date_old" | "type" | "origin";
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fileExtension(fn: string): string {
-  const i = fn.lastIndexOf(".");
-  return i >= 0 ? fn.slice(i + 1).toLowerCase() : "";
-}
-
-function sortStoredFiles(files: StoredFile[], key: SourceSortKey): StoredFile[] {
-  const out = [...files];
-  switch (key) {
-    case "date_new":
-      return out.sort((a, b) => b.uploaded_at_ms - a.uploaded_at_ms);
-    case "date_old":
-      return out.sort((a, b) => a.uploaded_at_ms - b.uploaded_at_ms);
-    case "type":
-      return out.sort((a, b) => {
-        const ea = fileExtension(a.filename);
-        const eb = fileExtension(b.filename);
-        const c = ea.localeCompare(eb);
-        if (c !== 0) return c;
-        return a.filename.localeCompare(b.filename);
-      });
-    case "origin":
-      return out.sort((a, b) => {
-        const oa = a.origin === "llm_ingest" ? 1 : 0;
-        const ob = b.origin === "llm_ingest" ? 1 : 0;
-        if (oa !== ob) return oa - ob;
-        return b.uploaded_at_ms - a.uploaded_at_ms;
-      });
-    default:
-      return out;
-  }
-}
 
 export default function SourceMaterialPanel(props: { backendBase: string }) {
   const { t, locale } = useI18n();
@@ -93,7 +48,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [newProjectName, setNewProjectName] = useState("");
-  const [storedFiles, setStoredFiles] = useState<StoredFile[]>([]);
+  const [storedFiles, setStoredFiles] = useState<StoredProjectFile[]>([]);
   /** Stored file ids to include when generating from the project (not the upload queue). */
   const [selectedStoredIds, setSelectedStoredIds] = useState<string[]>([]);
   const [sourceSort, setSourceSort] = useState<SourceSortKey>("date_new");
@@ -103,7 +58,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   const [savedCanvasUpdatedMs, setSavedCanvasUpdatedMs] = useState<number | null>(null);
   const [projectDeleteBusy, setProjectDeleteBusy] = useState(false);
 
-  const sortedStoredFiles = useMemo(() => sortStoredFiles(storedFiles, sourceSort), [storedFiles, sourceSort]);
+  const sortedStoredFiles = useMemo(() => sortStoredProjectFiles(storedFiles, sourceSort), [storedFiles, sourceSort]);
 
   const projectDownloadBase = useMemo(() => {
     return projectId ? `${props.backendBase}/projects/${encodeURIComponent(projectId)}/files` : "";
@@ -150,7 +105,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     }
     const res = await fetch(`${props.backendBase}/projects/${encodeURIComponent(projectId)}/files`);
     if (!res.ok) throw new Error(String(res.status));
-    const data = (await res.json()) as StoredFile[];
+    const data = (await res.json()) as StoredProjectFile[];
     setStoredFiles(data);
   }, [props.backendBase, projectId]);
 
@@ -179,7 +134,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         setSandboxMode(false);
         useUiStore.getState().setSelectedNode(null);
       }
-      lastAutoFetchedCanvasProjectId = projectId;
+      markCanvasAutoFetched(projectId);
     } catch {
       setSavedCanvasUpdatedMs(null);
     }
@@ -254,7 +209,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   useEffect(() => {
     if (!projectId) return;
     refreshStoredFiles().catch(() => {});
-    if (lastAutoFetchedCanvasProjectId === projectId) {
+    if (shouldSkipCanvasAutoFetch(projectId)) {
       return;
     }
     fetchAndApplySavedCanvas().catch(() => {});
@@ -312,9 +267,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
       }
       const cur = useUiStore.getState().projects;
       setProjects(cur.filter((p) => p.id !== pid));
-      if (lastAutoFetchedCanvasProjectId === pid) {
-        lastAutoFetchedCanvasProjectId = null;
-      }
+      clearCanvasAutoFetchForProject(pid);
       if (useUiStore.getState().projectId === pid) {
         setProjectId("");
         loadMainGraph({ nodes: [], edges: [] });
@@ -568,18 +521,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           type="file"
           className="hidden"
           multiple
-          accept={[
-            // Documents
-            ".pdf,.doc,.docx,.xls,.xlsx",
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            // Images
-            "image/png,image/jpeg,image/webp,image/gif",
-            ".png,.jpg,.jpeg,.webp,.gif"
-          ].join(",")}
+          accept={SOURCE_FILE_INPUT_ACCEPT}
           onChange={(e) => {
             if (e.target.files?.length) pickFiles(e.target.files);
             e.target.value = "";
@@ -587,99 +529,19 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         />
       </div>
 
-      {projectId && storedFiles.length > 0 && (
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-            <span>
-              {t("sm_stored_line", { files: storedFiles.length, n: selectedStoredIds.length })}
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1 text-[10px]">
-                <span className="text-slate-500">{t("sm_sort_label")}</span>
-                <select
-                  className="ios-select max-w-[10rem] py-1 text-[10px]"
-                  value={sourceSort}
-                  onChange={(e) => setSourceSort(e.target.value as SourceSortKey)}
-                >
-                  <option value="date_new">{t("sm_sort_date_new")}</option>
-                  <option value="date_old">{t("sm_sort_date_old")}</option>
-                  <option value="type">{t("sm_sort_type")}</option>
-                  <option value="origin">{t("sm_sort_origin")}</option>
-                </select>
-              </label>
-              <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => refreshStoredFiles()}>
-                {t("sm_refresh")}
-              </button>
-              <button
-                type="button"
-                className="text-sky-700 underline"
-                onClick={() => setSelectedStoredIds(storedFiles.map((x) => x.id))}
-              >
-                {t("review_select_all")}
-              </button>
-              <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => setSelectedStoredIds([])}>
-                {t("review_clear_selection")}
-              </button>
-            </div>
-          </div>
-          <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("sm_stored_help")}</p>
-          <ul className="mt-1 max-h-40 space-y-1 overflow-auto rounded-xl border border-slate-200 bg-white/60 p-1 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/30">
-            {sortedStoredFiles.map((f) => {
-              const checked = selectedStoredIds.includes(f.id);
-              const originLabel =
-                f.origin === "llm_ingest" ? t("sm_origin_llm") : t("sm_origin_user");
-              return (
-                <li key={f.id} className="flex items-center gap-2 rounded-lg bg-white/80 px-2 py-1.5 text-[11px] dark:bg-slate-900/60">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                    checked={checked}
-                    onChange={() => {
-                      setSelectedStoredIds((prev) =>
-                        prev.includes(f.id) ? prev.filter((id) => id !== f.id) : [...prev, f.id]
-                      );
-                    }}
-                    aria-label={t("sm_include_aria", { name: f.filename })}
-                  />
-                  <a className="min-w-0 flex-1 truncate font-medium text-slate-800 underline dark:text-slate-100" href={`${projectDownloadBase}/${encodeURIComponent(f.id)}`} target="_blank" rel="noreferrer" title={t("sm_download")} onClick={(e) => e.stopPropagation()}>
-                    {f.filename}
-                  </a>
-                  <span className="hidden shrink-0 text-[9px] text-slate-400 sm:inline" title={t("sm_sort_origin")}>
-                    {originLabel}
-                  </span>
-                  <span className="shrink-0 text-slate-500">{formatBytes(f.size)}</span>
-                  <button type="button" className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-red-700 shadow-sm backdrop-blur-xl hover:bg-white dark:border-slate-700 dark:bg-slate-950/40 dark:text-red-300 dark:hover:bg-slate-950/60" onClick={async () => {
-                      if (!projectId) return;
-                      try {
-                        const res = await fetch(
-                          `${props.backendBase}/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(f.id)}`,
-                          { method: "DELETE" }
-                        );
-                        if (!res.ok) {
-                          const err = await res.json().catch(() => ({}));
-                          const d = (err as { detail?: unknown }).detail;
-                          setError(
-                            typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Delete failed (${res.status})`
-                          );
-                          return;
-                        }
-                        setError("");
-                        setSelectedStoredIds((prev) => prev.filter((id) => id !== f.id));
-                        refreshStoredFiles().catch(() => {});
-                      } catch {
-                        setError(t("err_delete_net"));
-                      }
-                    }}
-                    title={t("sm_delete_project")}
-                  >
-                    {t("sm_delete")}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      <SourceMaterialStoredFilesBlock
+        backendBase={props.backendBase}
+        projectId={projectId}
+        projectDownloadBase={projectDownloadBase}
+        storedFiles={storedFiles}
+        sortedStoredFiles={sortedStoredFiles}
+        sourceSort={sourceSort}
+        onSourceSortChange={setSourceSort}
+        selectedStoredIds={selectedStoredIds}
+        setSelectedStoredIds={setSelectedStoredIds}
+        refreshStoredFiles={() => void refreshStoredFiles()}
+        setError={setError}
+      />
 
       {sourceFiles.length > 0 && (
         <div className="mt-3 space-y-1">

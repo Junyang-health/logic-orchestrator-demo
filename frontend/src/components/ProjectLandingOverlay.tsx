@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Image as ImageIcon, Sparkles, X } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { useI18n } from "../i18n/useI18n";
 import {
   composeIntentForBuild,
@@ -11,15 +11,9 @@ import {
   type SurveyClarificationPayload
 } from "../lib/mindmapBuild";
 import useUiStore from "../store/useUiStore";
-import { classifySourceKind } from "../types/sourceMaterial";
-
-const PREV_PROJECT_SESSION_KEY = "mindmap_prev_project_id";
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { PREV_PROJECT_SESSION_KEY } from "./sourceMaterial/projectSessionKeys";
+import { ProjectLandingSetupStep } from "./projectLanding/ProjectLandingSetupStep";
+import { ProjectLandingSurveyStep } from "./projectLanding/ProjectLandingSurveyStep";
 
 type ProjectChoice = "create" | "existing";
 
@@ -440,292 +434,38 @@ export default function ProjectLandingOverlay(props: { backendBase: string }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {!structureStep ? (
-            <>
-              <div className="text-[11px] font-medium text-slate-700 dark:text-slate-200">{t("landing_project_mode")}</div>
-              <div className="mt-1.5 flex flex-wrap gap-3">
-                <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-700 dark:text-slate-200">
-                  <input
-                    type="radio"
-                    name="landing-project-mode"
-                    className="h-3.5 w-3.5 border-slate-300 text-sky-600"
-                    checked={projectChoice === "existing"}
-                    onChange={() => {
-                      setProjectChoice("existing");
-                      newWizardInitRef.current = false;
-                      try {
-                        const prev = sessionStorage.getItem(PREV_PROJECT_SESSION_KEY);
-                        if (prev) setProjectId(prev);
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                  />
-                  {t("landing_mode_existing")}
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-700 dark:text-slate-200">
-                  <input
-                    type="radio"
-                    name="landing-project-mode"
-                    className="h-3.5 w-3.5 border-slate-300 text-sky-600"
-                    checked={projectChoice === "create"}
-                    onChange={() => {
-                      setProjectChoice("create");
-                      setStoredFiles([]);
-                      setSelectedStoredIds([]);
-                      setProjectId("");
-                    }}
-                  />
-                  {t("landing_mode_create")}
-                </label>
-              </div>
-
-              {projectChoice === "existing" ? (
-                <label className="mt-3 block text-[11px] text-slate-700 dark:text-slate-200">
-                  {t("sm_project")}
-                  <select
-                    className="mt-1 ios-select"
-                    value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
-                  >
-                    <option value="">{t("sm_no_project")}</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.id})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <label className="mt-3 block text-[11px] text-slate-700 dark:text-slate-200">
-                  {t("landing_project_name")}
-                  <input
-                    className="mt-1 ios-input py-2"
-                    value={draftProjectName}
-                    placeholder={t("sm_new_project_ph")}
-                    onChange={(e) => setDraftProjectName(e.target.value)}
-                  />
-                </label>
-              )}
-
-              {projectChoice === "existing" && !projectId ? (
-                <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">{t("landing_err_select_project")}</p>
-              ) : null}
-
-              <label className="mt-3 block text-[11px] text-slate-700 dark:text-slate-200">
-                {t("sm_intent", { n: MIN_INTENT_BOOTSTRAP })}
-                <textarea
-                  className="mt-1 ios-input resize-y"
-                  rows={3}
-                  value={intent}
-                  onChange={(e) => setIntent(e.target.value)}
-                  placeholder={t("sm_intent_ph")}
-                />
-              </label>
-
-              {projectId && storedFiles.length > 0 ? (
-                <div className="mt-3 text-[10px] text-slate-600 dark:text-slate-400">
-                  <div className="font-medium text-slate-700 dark:text-slate-200">{t("landing_stored_heading")}</div>
-                  <p className="mt-0.5 leading-snug">{t("sm_stored_help")}</p>
-                  <ul className="mt-1 max-h-24 space-y-1 overflow-auto rounded-lg border border-slate-200/80 bg-white/60 p-1 dark:border-slate-700 dark:bg-slate-950/40">
-                    {storedFiles.map((f) => {
-                      const checked = selectedStoredIds.includes(f.id);
-                      return (
-                        <li
-                          key={f.id}
-                          className="flex items-center gap-2 rounded-md px-2 py-1 text-[11px] dark:bg-slate-900/50"
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-sky-600"
-                            checked={checked}
-                            onChange={() => {
-                              setSelectedStoredIds((prev) =>
-                                prev.includes(f.id) ? prev.filter((id) => id !== f.id) : [...prev, f.id]
-                              );
-                            }}
-                            aria-label={t("sm_include_aria", { name: f.filename })}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{f.filename}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-                }}
-                onDragEnter={(e) => {
-                  e.preventDefault();
-                  setDragOver(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                  pickFiles(e.dataTransfer.files);
-                }}
-                onClick={() => inputRef.current?.click()}
-                className={[
-                  "mt-3 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-3 py-5 text-center transition-colors",
-                  dragOver
-                    ? "border-sky-500 bg-white/70 shadow-sm dark:bg-slate-900/60"
-                    : "border-slate-200/80 bg-white/55 hover:border-slate-300 dark:border-slate-700/70 dark:bg-slate-900/40"
-                ].join(" ")}
-              >
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-100">{t("sm_drop")}</span>
-                <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{t("sm_multi")}</span>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  className="hidden"
-                  multiple
-                  accept={[
-                    ".pdf,.doc,.docx,.xls,.xlsx",
-                    "application/pdf",
-                    "application/msword",
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    "application/vnd.ms-excel",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "image/png,image/jpeg,image/webp,image/gif",
-                    ".png,.jpg,.jpeg,.webp,.gif"
-                  ].join(",")}
-                  onChange={(e) => {
-                    if (e.target.files?.length) pickFiles(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </div>
-
-              {sourceFiles.length > 0 ? (
-                <ul className="mt-2 max-h-28 space-y-1 overflow-auto rounded-lg border border-slate-200/80 bg-white/50 p-1 dark:border-slate-700 dark:bg-slate-950/40">
-                  {sourceFiles.map((entry) => {
-                    const kind = classifySourceKind(entry.file);
-                    return (
-                      <li
-                        key={entry.id}
-                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-100"
-                      >
-                        {kind === "excel" ? (
-                          <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                        ) : kind === "image" ? (
-                          <ImageIcon className="h-3.5 w-3.5 shrink-0 text-violet-600" />
-                        ) : (
-                          <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                        )}
-                        <span className="min-w-0 flex-1 truncate">{entry.file.name}</span>
-                        <span className="shrink-0 text-slate-500">{formatBytes(entry.file.size)}</span>
-                        <button
-                          type="button"
-                          className="shrink-0 text-slate-500 hover:text-red-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeSourceFile(entry.id);
-                          }}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </>
+            <ProjectLandingSetupStep
+              projectChoice={projectChoice}
+              setProjectChoice={setProjectChoice}
+              newWizardInitRef={newWizardInitRef}
+              projects={projects}
+              projectId={projectId}
+              setProjectId={setProjectId}
+              draftProjectName={draftProjectName}
+              setDraftProjectName={setDraftProjectName}
+              intent={intent}
+              setIntent={setIntent}
+              storedFiles={storedFiles}
+              selectedStoredIds={selectedStoredIds}
+              setSelectedStoredIds={setSelectedStoredIds}
+              inputRef={inputRef}
+              dragOver={dragOver}
+              setDragOver={setDragOver}
+              pickFiles={pickFiles}
+              sourceFiles={sourceFiles}
+              removeSourceFile={removeSourceFile}
+              setStoredFiles={setStoredFiles}
+            />
           ) : (
-            <>
-              {clarifyLoading || !clarifyPayload ? (
-                <div className="space-y-2 py-6 text-center">
-                  <p className="text-[12px] font-medium text-slate-700 dark:text-slate-200">{t("landing_clarify_loading")}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{t("landing_clarify_loading_hint")}</p>
-                </div>
-              ) : (
-                <>
-                  {clarifyFetchFallback ? (
-                    <p className="mb-2 rounded-lg border border-amber-200/80 bg-amber-50/90 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-500/35 dark:bg-amber-950/50 dark:text-amber-100">
-                      {t("landing_clarify_offline")}
-                    </p>
-                  ) : null}
-                  <p className="text-[11px] leading-snug text-slate-600 dark:text-slate-300">{clarifyPayload.intro}</p>
-                  {clarifyPayload.clarification_note.trim() ? (
-                    <p className="mt-2 rounded-lg border border-sky-200/70 bg-sky-50/80 px-2.5 py-2 text-[10px] leading-snug text-sky-950 dark:border-sky-500/30 dark:bg-sky-950/40 dark:text-sky-100">
-                      <span className="font-semibold">{t("landing_clarify_note_label")}</span>{" "}
-                      {clarifyPayload.clarification_note}
-                    </p>
-                  ) : null}
-                  <div className="mt-3 space-y-4">
-                    {clarifyPayload.questions.map((q) => {
-                      const selected = mcqSelections[q.id] ?? [];
-                      return (
-                        <fieldset key={q.id} className="rounded-xl border border-slate-200/80 bg-white/50 p-2.5 dark:border-slate-700/70 dark:bg-slate-950/35">
-                          <legend className="mb-1.5 px-0.5 text-[11px] font-medium text-slate-800 dark:text-slate-100">
-                            {q.prompt}
-                          </legend>
-                          <p className="mb-2 text-[9px] text-slate-500 dark:text-slate-400">
-                            {q.allow_multiple ? t("landing_mcq_hint_multi") : t("landing_mcq_hint_single")}
-                          </p>
-                          <div className="flex flex-col gap-1.5">
-                            {q.options.map((o) => {
-                              const checked = selected.includes(o.id);
-                              if (q.allow_multiple) {
-                                return (
-                                  <label
-                                    key={o.id}
-                                    className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-[11px] hover:bg-slate-100/80 dark:hover:bg-slate-800/60"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-sky-600"
-                                      checked={checked}
-                                      onChange={() => toggleMcq(q.id, o.id, true)}
-                                    />
-                                    <span className="text-slate-800 dark:text-slate-100">{o.label}</span>
-                                  </label>
-                                );
-                              }
-                              return (
-                                <label
-                                  key={o.id}
-                                  className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-[11px] hover:bg-slate-100/80 dark:hover:bg-slate-800/60"
-                                >
-                                  <input
-                                    type="radio"
-                                    className="mt-0.5 h-3.5 w-3.5 shrink-0 border-slate-300 text-sky-600"
-                                    name={`landing-mcq-${q.id}`}
-                                    checked={checked}
-                                    onChange={() => toggleMcq(q.id, o.id, false)}
-                                  />
-                                  <span className="text-slate-800 dark:text-slate-100">{o.label}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
-                      );
-                    })}
-                  </div>
-                  <label className="mt-4 block text-[11px] text-slate-700 dark:text-slate-200">
-                    {clarifyPayload.open_followup.prompt}
-                    <textarea
-                      className="mt-1 ios-input resize-y"
-                      rows={2}
-                      value={openFollowupText}
-                      placeholder={clarifyPayload.open_followup.placeholder || t("landing_survey_avoid_ph")}
-                      onChange={(e) => setOpenFollowupText(e.target.value)}
-                    />
-                  </label>
-                </>
-              )}
-            </>
+            <ProjectLandingSurveyStep
+              clarifyLoading={clarifyLoading}
+              clarifyPayload={clarifyPayload}
+              clarifyFetchFallback={clarifyFetchFallback}
+              toggleMcq={toggleMcq}
+              mcqSelections={mcqSelections}
+              openFollowupText={openFollowupText}
+              setOpenFollowupText={setOpenFollowupText}
+            />
           )}
         </div>
 

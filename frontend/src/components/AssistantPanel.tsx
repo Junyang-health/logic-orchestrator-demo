@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MessageCircle, RotateCcw, X } from "lucide-react";
 import { combineGraphs } from "../lib/graphBranch";
 import { getBackendBase } from "../lib/backendBase";
 import { useI18n } from "../i18n/useI18n";
@@ -12,13 +11,15 @@ import {
   type OptimismMetric
 } from "../lib/optimismMeter";
 import type { MindmapJson } from "../types/mindmap";
-import AssistantBlackSwanTab from "./assistant/tabs/AssistantBlackSwanTab";
-import AssistantMeceTab from "./assistant/tabs/AssistantMeceTab";
-import AssistantOptimismTab from "./assistant/tabs/AssistantOptimismTab";
-import AssistantRoundtableTab from "./assistant/tabs/AssistantRoundtableTab";
 import AssistantSkillsBlock from "./assistant/AssistantSkillsBlock";
 import AssistantTranscriptBlock from "./assistant/AssistantTranscriptBlock";
 import AssistantPanelFooter from "./assistant/AssistantPanelFooter";
+import AssistantPanelHeader from "./assistant/AssistantPanelHeader";
+import AssistantPanelModeSegment from "./assistant/AssistantPanelModeSegment";
+import AssistantPanelSimulationStack from "./assistant/AssistantPanelSimulationStack";
+import AssistantSandboxDraftBanner from "./assistant/AssistantSandboxDraftBanner";
+import AssistantSessionSourcesCard from "./assistant/AssistantSessionSourcesCard";
+import type { AssistantPanelMode } from "./assistant/assistantPanelMode";
 import {
   SKILLS_STORAGE_KEY,
   ROUNDTABLE_LIB_KEY,
@@ -34,6 +35,7 @@ import {
   type RoundtablePersona,
   type RoundtableTranscriptRow
 } from "./assistant/assistantTypes";
+import { readAssistantSourceFilePickMap, writeAssistantSourceFilePickForProject } from "./assistant/assistantSourceFilePick";
 import {
   useAssistantPanelActions,
   type AssistantPanelActionsCtx
@@ -41,37 +43,6 @@ import {
 import { useAssistantGraphSlice, useAssistantSessionSlice, useAssistantSkillsSlice } from "./assistant/useAssistantZustand";
 
 export type { CustomSkillRow } from "./assistant/assistantTypes";
-
-const ASSISTANT_SOURCE_FILE_PICK_KEY = "mindmap_assistant_source_file_pick_v1";
-
-function readAssistantSourceFilePickMap(): Record<string, string[]> {
-  try {
-    const raw = localStorage.getItem(ASSISTANT_SOURCE_FILE_PICK_KEY);
-    if (!raw) return {};
-    const p = JSON.parse(raw) as unknown;
-    if (p && typeof p === "object" && !Array.isArray(p)) {
-      return Object.fromEntries(
-        Object.entries(p as Record<string, unknown>).map(([k, v]) => [
-          k,
-          Array.isArray(v) ? (v as unknown[]).map((x) => String(x)) : []
-        ])
-      );
-    }
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
-
-function writeAssistantSourceFilePickForProject(projectId: string, ids: string[]) {
-  try {
-    const m = readAssistantSourceFilePickMap();
-    m[projectId] = ids;
-    localStorage.setItem(ASSISTANT_SOURCE_FILE_PICK_KEY, JSON.stringify(m));
-  } catch {
-    /* ignore */
-  }
-}
 
 export default function AssistantPanel() {
   const { t, locale } = useI18n();
@@ -94,7 +65,7 @@ export default function AssistantPanel() {
   const [projectFiles, setProjectFiles] = useState<{ id: string; filename: string }[]>([]);
   const [projectFilesLoadError, setProjectFilesLoadError] = useState(false);
   const [selectedSourceFileIds, setSelectedSourceFileIds] = useState<string[]>([]);
-  const [mode, setMode] = useState<"chat" | "optimism" | "blackSwan" | "mece" | "roundtable">("chat");
+  const [mode, setMode] = useState<AssistantPanelMode>("chat");
 
   const [rtPersonas, setRtPersonas] = useState<RoundtablePersona[]>([]);
   const [rtTranscript, setRtTranscript] = useState<RoundtableTranscriptRow[]>([]);
@@ -167,10 +138,7 @@ export default function AssistantPanel() {
     }
   }, [rtLib]);
 
-  const combined: MindmapJson = useMemo(
-    () => combineGraphs(mainGraph, sandboxGraph),
-    [mainGraph, sandboxGraph]
-  );
+  const combined: MindmapJson = useMemo(() => combineGraphs(mainGraph, sandboxGraph), [mainGraph, sandboxGraph]);
 
   const branchFinancial = useMemo(() => {
     if (!selectedNode?.id) return null;
@@ -219,8 +187,7 @@ export default function AssistantPanel() {
     setMeceWebBusyId(null);
   }, [selectedNode?.id]);
 
-  const sandboxHasDrafts =
-    sandboxGraph.nodes.length > 0 || sandboxGraph.edges.length > 0;
+  const sandboxHasDrafts = sandboxGraph.nodes.length > 0 || sandboxGraph.edges.length > 0;
 
   const payloadSkills = useMemo(
     () =>
@@ -275,10 +242,7 @@ export default function AssistantPanel() {
       }
       setProjectFilesLoadError(false);
       try {
-        const res = await fetch(
-          `${backendBase}/projects/${encodeURIComponent(activeProjectId)}/files`,
-          { signal }
-        );
+        const res = await fetch(`${backendBase}/projects/${encodeURIComponent(activeProjectId)}/files`, { signal });
         if (!res.ok) {
           setProjectFilesLoadError(true);
           setProjectFiles([]);
@@ -286,9 +250,7 @@ export default function AssistantPanel() {
         }
         const rows = (await res.json()) as { id: string; filename: string }[];
         if (signal?.aborted) return;
-        setProjectFiles(
-          Array.isArray(rows) ? rows.map((r) => ({ id: r.id, filename: r.filename || r.id })) : []
-        );
+        setProjectFiles(Array.isArray(rows) ? rows.map((r) => ({ id: r.id, filename: r.filename || r.id })) : []);
       } catch {
         if (!signal?.aborted) {
           setProjectFilesLoadError(true);
@@ -322,14 +284,11 @@ export default function AssistantPanel() {
     setIngestWebBusy(true);
     setError("");
     try {
-      const res = await fetch(
-        `${backendBase}/projects/${encodeURIComponent(projectId)}/files/ingest-web`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ queries: lines, max_results_per_query: 3, max_pages_ingest: 15 })
-        }
-      );
+      const res = await fetch(`${backendBase}/projects/${encodeURIComponent(projectId)}/files/ingest-web`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queries: lines, max_results_per_query: 3, max_pages_ingest: 15 })
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const d = (err as { detail?: unknown }).detail;
@@ -498,15 +457,11 @@ export default function AssistantPanel() {
   }, []);
 
   const updateSkillName = useCallback((id: string, name: string) => {
-    setCustomSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, name: name.slice(0, 120) } : s))
-    );
+    setCustomSkills((prev) => prev.map((s) => (s.id === id ? { ...s, name: name.slice(0, 120) } : s)));
   }, []);
 
   const updateSkillInstruction = useCallback((id: string, instruction: string) => {
-    setCustomSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, instruction: instruction.slice(0, 8000) } : s))
-    );
+    setCustomSkills((prev) => prev.map((s) => (s.id === id ? { ...s, instruction: instruction.slice(0, 8000) } : s)));
   }, []);
 
   const clearChat = useCallback(() => {
@@ -605,7 +560,7 @@ export default function AssistantPanel() {
       const m = raw.match(/^\s*\/(chat|optimism|blackswan|black-swan|mece|roundtable)\s*$/i);
       if (m) {
         const g = m[1].toLowerCase().replace("black-swan", "blackswan");
-        const nextMode =
+        const nextMode: AssistantPanelMode =
           g === "chat"
             ? "chat"
             : g === "optimism"
@@ -625,186 +580,58 @@ export default function AssistantPanel() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/95">
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-2 py-2 dark:border-slate-800">
-        <MessageCircle className="h-4 w-4 text-slate-600 dark:text-slate-400" />
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-          {t("assistant_title")}
-        </span>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 text-[10px] font-medium text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
-            title={t("assistant_close_session")}
-            onClick={deactivateAssistant}
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-            {t("assistant_close_session")}
-          </button>
-        </div>
-      </div>
+      <AssistantPanelHeader title={t("assistant_title")} closeLabel={t("assistant_close_session")} onClose={deactivateAssistant} />
 
-      <div className="shrink-0 border-b border-slate-200 bg-slate-50/90 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-950/90">
-        <div className="ios-segment flex w-full flex-wrap justify-stretch gap-0.5">
-          <button
-            type="button"
-            className={[
-              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-              mode === "chat" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-            ].join(" ")}
-            onClick={() => setMode("chat")}
-          >
-            {t("mode_chat")}
-          </button>
-          <button
-            type="button"
-            className={[
-              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-              mode === "optimism" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-            ].join(" ")}
-            onClick={() => setMode("optimism")}
-          >
-            {t("mode_optimism")}
-          </button>
-          <button
-            type="button"
-            className={[
-              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-              mode === "blackSwan" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-            ].join(" ")}
-            onClick={() => setMode("blackSwan")}
-          >
-            {t("mode_black_swan")}
-          </button>
-          <button
-            type="button"
-            className={[
-              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-              mode === "mece" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-            ].join(" ")}
-            onClick={() => setMode("mece")}
-          >
-            {t("mode_mece")}
-          </button>
-          <button
-            type="button"
-            className={[
-              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-              mode === "roundtable" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-            ].join(" ")}
-            onClick={() => setMode("roundtable")}
-          >
-            {t("mode_roundtable")}
-          </button>
-        </div>
-      </div>
+      <AssistantPanelModeSegment
+        mode={mode}
+        onModeChange={setMode}
+        labels={{
+          chat: t("mode_chat"),
+          optimism: t("mode_optimism"),
+          blackSwan: t("mode_black_swan"),
+          mece: t("mode_mece"),
+          roundtable: t("mode_roundtable")
+        }}
+      />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-[1_1_50%] overflow-y-auto overflow-x-hidden border-b border-slate-200 p-2 dark:border-slate-800">
-          <div className="mb-3 ios-card p-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              {t("assistant_session")}
-            </div>
-            <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-200">
-              {t("assistant_target_node")} <span className="font-mono">{selectedNode?.id ?? "—"}</span>
-            </div>
-            <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_sandbox_hint")}</div>
-            {skills.webSearch && (
-              <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-200">
-                <label className="block" htmlFor="assistant-web-search-queries">
-                  {t("assistant_web_query")}
-                </label>
-                <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_web_query_help")}</p>
-                <textarea
-                  id="assistant-web-search-queries"
-                  className="mt-1 min-h-[4.5rem] w-full resize-y rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  rows={4}
-                  value={webSearchQuery}
-                  onChange={(e) => setWebSearchQuery(e.target.value)}
-                  placeholder={t("assistant_web_query_ph")}
-                />
-                {activeProjectId ? (
-                  <div className="mt-1.5">
-                    <button
-                      type="button"
-                      className="ios-button w-full py-1.5 text-[10px] disabled:opacity-50"
-                      disabled={ingestWebBusy}
-                      onClick={ingestWebToSources}
-                    >
-                      {ingestWebBusy ? t("assistant_web_ingest_busy") : t("assistant_web_ingest_cta")}
-                    </button>
-                    <p className="mt-0.5 text-[9px] text-slate-500 dark:text-slate-500">{t("assistant_web_ingest_hint")}</p>
-                  </div>
-                ) : null}
-              </div>
-            )}
-            <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-200">
-              <div className="font-medium">{t("assistant_source_files")}</div>
-              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_hint")}</p>
-              {!activeProjectId ? (
-                <p className="mt-2 text-[10px] text-amber-800 dark:text-amber-200/90">{t("assistant_source_files_no_project")}</p>
-              ) : projectFilesLoadError ? (
-                <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{t("assistant_source_files_error")}</p>
-              ) : projectFiles.length === 0 ? (
-                <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_empty")}</p>
-              ) : (
-                <>
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="text-[10px] text-sky-600 underline dark:text-sky-400"
-                      onClick={() => setSelectedSourceFileIds(projectFiles.map((f) => f.id))}
-                    >
-                      {t("assistant_select_all_sources")}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[10px] text-sky-600 underline dark:text-sky-400"
-                      onClick={() => setSelectedSourceFileIds([])}
-                    >
-                      {t("assistant_select_no_sources")}
-                    </button>
-                  </div>
-                  <label className="mt-1.5 block">
-                    <span className="sr-only">{t("assistant_source_files")}</span>
-                    <select
-                      multiple
-                      size={Math.min(8, Math.max(3, projectFiles.length))}
-                      className="w-full max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      value={selectedSourceFileIds}
-                      onChange={(e) => {
-                        const next = Array.from(e.target.selectedOptions, (o) => o.value);
-                        setSelectedSourceFileIds(next);
-                      }}
-                      aria-label={t("assistant_source_files")}
-                    >
-                      {projectFiles.map((f) => (
-                        <option key={f.id} value={f.id} title={f.filename}>
-                          {f.filename}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                    {t("assistant_source_files_selection_count", { n: selectedSourceFileIds.length })}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
+          <AssistantSessionSourcesCard
+            sessionLabel={t("assistant_session")}
+            targetNodeLabel={t("assistant_target_node")}
+            selectedNodeId={selectedNode?.id}
+            sandboxHint={t("assistant_sandbox_hint")}
+            skillsWebSearch={skills.webSearch}
+            webQueryLabel={t("assistant_web_query")}
+            webQueryHelp={t("assistant_web_query_help")}
+            webQueryPlaceholder={t("assistant_web_query_ph")}
+            webSearchQuery={webSearchQuery}
+            onWebSearchQueryChange={setWebSearchQuery}
+            activeProjectId={activeProjectId}
+            ingestBusy={ingestWebBusy}
+            ingestCta={t("assistant_web_ingest_cta")}
+            ingestBusyLabel={t("assistant_web_ingest_busy")}
+            ingestHint={t("assistant_web_ingest_hint")}
+            onIngestWeb={ingestWebToSources}
+            sourceFilesLabel={t("assistant_source_files")}
+            sourceFilesHint={t("assistant_source_files_hint")}
+            sourceFilesNoProject={t("assistant_source_files_no_project")}
+            sourceFilesError={t("assistant_source_files_error")}
+            sourceFilesEmpty={t("assistant_source_files_empty")}
+            selectAllSources={t("assistant_select_all_sources")}
+            selectNoSources={t("assistant_select_no_sources")}
+            selectionCount={(n) => t("assistant_source_files_selection_count", { n })}
+            projectFilesLoadError={projectFilesLoadError}
+            projectFiles={projectFiles}
+            selectedSourceFileIds={selectedSourceFileIds}
+            onSelectedSourceFileIdsChange={setSelectedSourceFileIds}
+          />
           {sandboxHasDrafts ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-[10px] text-slate-600 dark:text-slate-400">
-                {t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
-              </span>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-[10px] text-slate-600 underline dark:text-slate-400"
-                onClick={discardDraft}
-              >
-                <RotateCcw className="h-3 w-3" />
-                {t("assistant_discard_draft")}
-              </button>
-            </div>
+            <AssistantSandboxDraftBanner
+              line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
+              discardLabel={t("assistant_discard_draft")}
+              onDiscard={discardDraft}
+            />
           ) : null}
 
           <AssistantTranscriptBlock
@@ -820,83 +647,53 @@ export default function AssistantPanel() {
           />
         </div>
 
-        {(mode !== "chat" || simReport) ? (
-        <div className="max-h-[min(50vh,28rem)] shrink-0 overflow-y-auto overflow-x-hidden border-b border-slate-200 bg-slate-50/80 p-2 dark:border-slate-800 dark:bg-slate-950/80">
-          {mode === "optimism" && (
-            <AssistantOptimismTab
-              branchFinancial={branchFinancial}
-              optimismMetricsAvailable={optimismMetricsAvailable}
-              optimismFocus={optimismFocus}
-              setOptimismFocus={setOptimismFocus}
-              currency={currency}
-              setCurrency={setCurrency}
-              optimismDeltaPct={optimismDeltaPct}
-              setOptimismDeltaPct={setOptimismDeltaPct}
-              optimismPreview={optimismPreview}
-              optimismAffected={optimismAffected}
-              simBusy={simBusy}
-              onApplyOptimism={runOptimismSimulation}
-            />
-          )}
-
-          {mode === "blackSwan" && (
-            <AssistantBlackSwanTab
-              selectedNodeId={selectedNode?.id}
-              simBusy={simBusy}
-              bsScenarios={bsScenarios}
-              bsSelectedScenarioIds={bsSelectedScenarioIds}
-              onToggleScenario={handleBsToggleScenario}
-              bsRunBundle={bsRunBundle}
-              bsMitigationPick={bsMitigationPick}
-              onToggleMitigation={handleBsToggleMitigation}
-              onScan={blackSwanScan}
-              onRun={blackSwanRun}
-              onApply={blackSwanApply}
-            />
-          )}
-
-          {mode === "mece" && (
-            <AssistantMeceTab
-              selectedNodeId={selectedNode?.id}
-              simBusy={simBusy}
-              meceScanBundle={meceScanBundle}
-              meceSelectedMods={meceSelectedMods}
-              onToggleModification={handleMeceToggleModification}
-              meceEvidenceBundle={meceEvidenceBundle}
-              meceWebHints={meceWebHints}
-              meceWebBusyId={meceWebBusyId}
-              onScan={meceScan}
-              onEvidence={meceEvidence}
-              onWebSearchForMod={meceWebSearchForMod}
-              onApply={meceApply}
-            />
-          )}
-
-          {mode === "roundtable" && (
-            <AssistantRoundtableTab
-              rtPersonas={rtPersonas}
-              rtLib={rtLib}
-              rtNewName={rtNewName}
-              setRtNewName={setRtNewName}
-              rtNewInstruction={rtNewInstruction}
-              setRtNewInstruction={setRtNewInstruction}
-              onAddPreset={addRtPreset}
-              onAddFromLib={addRtFromLib}
-              onRemovePersona={removeRtPersona}
-              onAddCustom={addRtCustom}
-            />
-          )}
-
-          {simReport ? (
-            <div className="mt-3 ios-card p-3 text-[11px] text-slate-700 dark:text-slate-200">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                {t("assistant_sim_report")}
-              </div>
-              <pre className="whitespace-pre-wrap">{simReport}</pre>
-            </div>
-          ) : null}
-        </div>
-        ) : null}
+        <AssistantPanelSimulationStack
+          mode={mode}
+          simReport={simReport}
+          simReportTitle={t("assistant_sim_report")}
+          branchFinancial={branchFinancial}
+          optimismMetricsAvailable={optimismMetricsAvailable}
+          optimismFocus={optimismFocus}
+          setOptimismFocus={setOptimismFocus}
+          currency={currency}
+          setCurrency={setCurrency}
+          optimismDeltaPct={optimismDeltaPct}
+          setOptimismDeltaPct={setOptimismDeltaPct}
+          optimismPreview={optimismPreview}
+          optimismAffected={optimismAffected}
+          simBusy={simBusy}
+          onApplyOptimism={runOptimismSimulation}
+          selectedNodeId={selectedNode?.id}
+          bsScenarios={bsScenarios}
+          bsSelectedScenarioIds={bsSelectedScenarioIds}
+          onToggleScenario={handleBsToggleScenario}
+          bsRunBundle={bsRunBundle}
+          bsMitigationPick={bsMitigationPick}
+          onToggleMitigation={handleBsToggleMitigation}
+          onBlackSwanScan={blackSwanScan}
+          onBlackSwanRun={blackSwanRun}
+          onBlackSwanApply={blackSwanApply}
+          meceScanBundle={meceScanBundle}
+          meceSelectedMods={meceSelectedMods}
+          onToggleMeceModification={handleMeceToggleModification}
+          meceEvidenceBundle={meceEvidenceBundle}
+          meceWebHints={meceWebHints}
+          meceWebBusyId={meceWebBusyId}
+          onMeceScan={meceScan}
+          onMeceEvidence={meceEvidence}
+          onMeceWebSearchForMod={meceWebSearchForMod}
+          onMeceApply={meceApply}
+          rtPersonas={rtPersonas}
+          rtLib={rtLib}
+          rtNewName={rtNewName}
+          setRtNewName={setRtNewName}
+          rtNewInstruction={rtNewInstruction}
+          setRtNewInstruction={setRtNewInstruction}
+          onAddRtPreset={addRtPreset}
+          onAddFromLib={addRtFromLib}
+          onRemoveRtPersona={removeRtPersona}
+          onAddRtCustom={addRtCustom}
+        />
 
         <AssistantPanelFooter
           error={error}

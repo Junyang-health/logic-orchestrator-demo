@@ -1,8 +1,9 @@
 import { memo, type ReactNode } from "react";
 import { MessageCircle, Send, Wand2 } from "lucide-react";
 import { useI18n } from "../../i18n/useI18n";
+import type { AssistantPanelMode } from "./assistantPanelMode";
 
-export type AssistantPanelMode = "chat" | "optimism" | "blackSwan" | "mece" | "roundtable";
+export type { AssistantPanelMode };
 
 export type AssistantPanelFooterProps = {
   /** Skills & lens block; rendered after the message area and before primary actions. */
