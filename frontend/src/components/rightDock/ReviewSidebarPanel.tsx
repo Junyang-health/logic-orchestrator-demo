@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../../i18n/useI18n";
 import useUiStore from "../../store/useUiStore";
 import { combineGraphs, collectBranchSubgraph } from "../../lib/graphBranch";
+import { collectMindmapCollisions } from "../../lib/mindmapCollisionChips";
 import type { MindmapJson } from "../../types/mindmap";
 import { REVIEW_PERSONAS } from "../../types/review";
 
@@ -40,10 +41,12 @@ export default function ReviewSidebarPanel(props: {
     setReviewFocusNodeId,
     reviewLoading,
     setReviewLoading,
-    clearReviewComments,
-    loadMainGraph,
-    clearSandbox
-  } = useUiStore(
+      clearReviewComments,
+      loadMainGraph,
+      clearSandbox,
+      requestCanvasCenterOnNode,
+      projectId
+    } = useUiStore(
     useShallow((s) => ({
       selectedNode: s.selectedNode,
       mainGraph: s.mainGraph,
@@ -59,9 +62,21 @@ export default function ReviewSidebarPanel(props: {
       setReviewLoading: s.setReviewLoading,
       clearReviewComments: s.clearReviewComments,
       loadMainGraph: s.loadMainGraph,
-      clearSandbox: s.clearSandbox
+      clearSandbox: s.clearSandbox,
+      requestCanvasCenterOnNode: s.requestCanvasCenterOnNode,
+      projectId: s.projectId
     }))
   );
+
+  const combinedForCollisions = useMemo(
+    () => combineGraphs(mainGraph, sandboxGraph),
+    [mainGraph, sandboxGraph]
+  );
+  const collisionRows = useMemo(
+    () => collectMindmapCollisions(combinedForCollisions),
+    [combinedForCollisions]
+  );
+  const hasGraphNodes = combinedForCollisions.nodes.length > 0;
 
   const [evidenceSource, setEvidenceSource] = useState<null | { filename: string; href: string }>(null);
 
@@ -79,15 +94,15 @@ export default function ReviewSidebarPanel(props: {
       setEvidenceSource(null);
       return;
     }
-    const projectId = localStorage.getItem("mindmap_project_id") || "";
-    if (!projectId) {
+    const pid = (projectId || "").trim();
+    if (!pid) {
       setEvidenceSource({ filename: sourceFilename, href: "" });
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${backendBase}/projects/${encodeURIComponent(projectId)}/files`);
+        const res = await fetch(`${backendBase}/projects/${encodeURIComponent(pid)}/files`);
         if (!res.ok) return;
         const files = (await res.json()) as Array<{ id: string; filename: string }>;
         const match = [...files]
@@ -97,7 +112,7 @@ export default function ReviewSidebarPanel(props: {
           if (!cancelled) setEvidenceSource({ filename: sourceFilename, href: "" });
           return;
         }
-        const href = `${backendBase}/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(match.id)}`;
+        const href = `${backendBase}/projects/${encodeURIComponent(pid)}/files/${encodeURIComponent(match.id)}`;
         if (!cancelled) setEvidenceSource({ filename: sourceFilename, href });
       } catch {
         if (!cancelled) setEvidenceSource({ filename: sourceFilename, href: "" });
@@ -106,7 +121,7 @@ export default function ReviewSidebarPanel(props: {
     return () => {
       cancelled = true;
     };
-  }, [backendBase, selectedNode?.id, selectedNode?.type, selectedNode?.metadata]);
+  }, [backendBase, projectId, selectedNode?.id, selectedNode?.type, selectedNode?.metadata]);
 
   const runReviewBranch = useCallback(async () => {
     const sel = useUiStore.getState().selectedNode;
@@ -267,6 +282,48 @@ export default function ReviewSidebarPanel(props: {
         </div>
       )}
       <p className="text-xs text-slate-600 dark:text-slate-300">{t("review_howto")}</p>
+      {collisionRows.length > 0 ? (
+        <div className="ios-card p-3 text-xs text-slate-800 dark:text-slate-100">
+          <div className="mb-2 font-semibold text-slate-900 dark:text-slate-100">
+            {t("review_collisions_title")}
+          </div>
+          <p className="mb-2 text-[11px] text-slate-600 dark:text-slate-400">{t("review_collisions_hint")}</p>
+          <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+            {collisionRows.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-slate-200/90 bg-white/70 p-2 text-left text-[11px] text-slate-800 hover:border-sky-300/60 hover:bg-white dark:border-slate-600/90 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:border-sky-600/50"
+                  onClick={() => requestCanvasCenterOnNode(row.nodeId)}
+                  title={t("review_collision_center_title")}
+                  aria-label={t("review_collision_center_title")}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={[
+                        "rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                        row.kind === "logic"
+                          ? "bg-rose-200/80 text-rose-950 dark:bg-rose-900/50 dark:text-rose-100"
+                          : "bg-violet-200/80 text-violet-950 dark:bg-violet-900/50 dark:text-violet-100"
+                      ].join(" ")}
+                    >
+                      {row.kind === "logic" ? t("review_collision_badge_logic") : t("review_collision_badge_facts")}
+                    </span>
+                    <span className="line-clamp-1 min-w-0 font-semibold text-slate-900 dark:text-slate-50">
+                      {row.nodeLabel}
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-3 text-[10px] leading-snug text-slate-600 dark:text-slate-300">
+                    {row.summary}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : hasGraphNodes ? (
+        <p className="text-[11px] text-slate-500 dark:text-slate-500">{t("review_collisions_empty")}</p>
+      ) : null}
       <label className="block text-xs text-slate-700 dark:text-slate-200">
         {t("review_persona")}
         <select

@@ -9,8 +9,31 @@ from app.services.llm_client import LlmClient
 from app.services import project_storage
 from app.services.markitdown_extract import TRUNCATE_API_CHARS, extract_bytes_to_markdown
 from app.services.mindmap_builder import InputFile, build_mindmap_from_files, build_mindmap_from_intent_only
+from app.services.mindmap_survey_clarify import build_clarification_survey
 
 router = APIRouter()
+
+
+class SurveyClarifyBody(BaseModel):
+    """Context for LLM-generated multiple-choice clarifications before mindmap build."""
+
+    intent: str = ""
+    has_queued_files: bool = False
+    queued_filenames: list[str] = Field(default_factory=list)
+    has_stored_selection: bool = False
+    stored_filenames: list[str] = Field(default_factory=list)
+
+
+@router.post("/mindmap/survey-clarifications")
+def mindmap_survey_clarifications(body: SurveyClarifyBody):
+    """Return tailored multi-choice (mostly) follow-up questions for level-2 branch alignment."""
+    return build_clarification_survey(
+        intent=body.intent,
+        has_queued_files=body.has_queued_files,
+        queued_filenames=[str(x) for x in body.queued_filenames if str(x).strip()][:40],
+        has_stored_selection=body.has_stored_selection,
+        stored_filenames=[str(x) for x in body.stored_filenames if str(x).strip()][:40],
+    )
 
 
 class IntentOnlyMindmapBody(BaseModel):

@@ -15,6 +15,25 @@ type PanelKey = "source" | "review" | "export";
 export type AppLocale = "en" | "zh";
 
 const LOCALE_KEY = "mindmap_locale";
+const PROJECT_ID_KEY = "mindmap_project_id";
+const INTENT_KEY = "mindmap_intent";
+const LANDING_DONE_KEY = "mindmap_landing_done";
+
+function readProjectId(): string {
+  try {
+    return localStorage.getItem(PROJECT_ID_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function readIntent(): string {
+  try {
+    return localStorage.getItem(INTENT_KEY) || "";
+  } catch {
+    return "";
+  }
+}
 
 function readLocale(): AppLocale {
   try {
@@ -109,6 +128,9 @@ type SourceMaterialState = {
   addSourceFiles: (files: File[]) => void;
   removeSourceFile: (id: string) => void;
   clearSourceFiles: () => void;
+  /** Project library file ids currently selected in Source (used for mindmap + collision context). */
+  projectSelectedFileIds: string[];
+  setProjectSelectedFileIds: (ids: string[]) => void;
 };
 
 function readDockOpen(key: string, defaultOpen: boolean): boolean {
@@ -121,6 +143,23 @@ function readDockOpen(key: string, defaultOpen: boolean): boolean {
   }
   return defaultOpen;
 }
+
+type ProjectRow = { id: string; name: string };
+
+type ProjectWorkspaceState = {
+  projectId: string;
+  setProjectId: (id: string) => void;
+  projects: ProjectRow[];
+  setProjects: (projects: ProjectRow[]) => void;
+  intent: string;
+  setIntent: (intent: string) => void;
+  projectLandingOpen: boolean;
+  projectLandingReason: "first_visit" | "new_project" | null;
+  openProjectLanding: (reason?: "first_visit" | "new_project") => void;
+  closeProjectLanding: () => void;
+  /** Persist onboarding flag and close the landing overlay. */
+  dismissProjectLandingOnboarding: () => void;
+};
 
 type UiState = {
   activePanel: PanelKey;
@@ -162,9 +201,16 @@ type UiState = {
   expandAllCollapsedSubtrees: () => void;
   /** Set collapsed roots to all graph entry nodes with children (show only top-level). */
   collapseAllSubtreesToTopLevel: () => void;
+  /**
+   * Canvas should center on this node (e.g. Review panel). `token` bumps on each request so
+   * the same node can be focused again.
+   */
+  canvasCenterOnNodeRequest: { nodeId: string; token: number } | null;
+  requestCanvasCenterOnNode: (nodeId: string) => void;
 } & SkillsState &
   ReviewState &
-  SourceMaterialState;
+  SourceMaterialState &
+  ProjectWorkspaceState;
 
 function computeClusters(graph: MindmapJson): Record<string, string> {
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
@@ -269,7 +315,45 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
     }
     set({ locale: loc });
   },
-  theme: "light",
+  projectId: readProjectId(),
+  setProjectId: (id) => {
+    try {
+      localStorage.setItem(PROJECT_ID_KEY, id);
+    } catch {
+      /* ignore */
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("mindmap:projectId", { detail: { projectId: id } }));
+    } catch {
+      /* ignore */
+    }
+    set({ projectId: id });
+  },
+  projects: [],
+  setProjects: (projects) => set({ projects }),
+  intent: readIntent(),
+  setIntent: (intent) => {
+    try {
+      localStorage.setItem(INTENT_KEY, intent);
+    } catch {
+      /* ignore */
+    }
+    set({ intent });
+  },
+  projectLandingOpen: false,
+  projectLandingReason: null,
+  openProjectLanding: (reason = "first_visit") =>
+    set({ projectLandingOpen: true, projectLandingReason: reason }),
+  closeProjectLanding: () => set({ projectLandingOpen: false, projectLandingReason: null }),
+  dismissProjectLandingOnboarding: () => {
+    try {
+      localStorage.setItem(LANDING_DONE_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    set({ projectLandingOpen: false, projectLandingReason: null });
+  },
+  theme: "dark",
   setTheme: (t) => set({ theme: t }),
   toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
   assistantActive: false,
@@ -331,6 +415,13 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
     }
     set({ collapsedSubtreeRootIds: [] });
   },
+  canvasCenterOnNodeRequest: null,
+  requestCanvasCenterOnNode: (nodeId) => {
+    const id = nodeId.trim();
+    if (!id) return;
+    set({ canvasCenterOnNodeRequest: { nodeId: id, token: Date.now() } });
+  },
+
   collapseAllSubtreesToTopLevel: () => {
     const st = get();
     const combined = combineGraphs(st.mainGraph, st.sandboxGraph);
@@ -395,6 +486,8 @@ const useUiStore = create<UiState & GraphState>((set, get) => ({
   removeSourceFile: (id) =>
     set((s) => ({ sourceFiles: s.sourceFiles.filter((e) => e.id !== id) })),
   clearSourceFiles: () => set({ sourceFiles: [] }),
+  projectSelectedFileIds: [],
+  setProjectSelectedFileIds: (ids) => set({ projectSelectedFileIds: Array.from(new Set(ids)) }),
 
   mainGraph: null,
   sandboxGraph: { nodes: [], edges: [] },

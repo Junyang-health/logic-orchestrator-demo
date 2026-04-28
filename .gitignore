@@ -42,3 +42,9 @@ htmlcov/
 
 # Vite
 frontend/.vite/
+
+# Local / sample project data (not tracked)
+backend/data/projects/facai/
+backend/data/projects/ot-bp/
+backend/data/projects/test_no-source/
+backend/data/projects/tcm-test/

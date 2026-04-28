@@ -80,7 +80,7 @@ class AssistantChatRequest(BaseModel):
     selected_node_id: Optional[str] = None
     web_search_query: Optional[str] = Field(
         default=None,
-        description="Optional explicit query to use when builtin_skills.webSearch is enabled.",
+        description="When webSearch is on: one Tavily query per non-empty line (max ~12). If empty, the latest user message is used; use multiple lines there for multi-search.",
     )
     custom_skills: List[CustomSkillIn] = Field(default_factory=list)
     builtin_skills: Dict[str, bool] = Field(default_factory=dict)

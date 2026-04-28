@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 import uuid
 from dataclasses import dataclass
@@ -40,6 +41,13 @@ class Project:
     created_at_ms: int
 
 
+def _normalize_origin(raw: Any) -> str:
+    s = str(raw or "").strip().lower()
+    if s == "llm_ingest":
+        return "llm_ingest"
+    return "user_upload"
+
+
 @dataclass(frozen=True)
 class StoredFile:
     id: str
@@ -52,6 +60,8 @@ class StoredFile:
     extracted_relpath: str | None = None
     extracted_at_ms: int | None = None
     extract_error: str | None = None
+    # user_upload: POST /upload or equivalent; llm_ingest: Tavily/web pipeline, assistant ingest, etc.
+    origin: str = "user_upload"
 
 
 def _project_dir(project_id: str) -> Path:
@@ -151,6 +161,19 @@ def list_projects() -> list[Project]:
     return out
 
 
+def delete_project(*, project_id: str) -> None:
+    raw = (project_id or "").strip()
+    if not raw or raw in (".", "..") or "/" in raw or "\\" in raw:
+        raise FileNotFoundError(raw)
+    if not project_exists(raw):
+        raise FileNotFoundError(raw)
+    pdir = _project_dir(raw).resolve()
+    base = _PROJECTS_DIR.resolve()
+    if pdir.parent != base:
+        raise FileNotFoundError(raw)
+    shutil.rmtree(pdir)
+
+
 def _stored_file_from_row(r: dict[str, Any]) -> StoredFile:
     ex_at = r.get("extracted_at_ms")
     return StoredFile(
@@ -163,6 +186,7 @@ def _stored_file_from_row(r: dict[str, Any]) -> StoredFile:
         extracted_relpath=(str(r.get("extracted_relpath")) if r.get("extracted_relpath") else None) or None,
         extracted_at_ms=(int(ex_at) if ex_at is not None and str(ex_at) != "" else None),
         extract_error=(str(r.get("extract_error")) if r.get("extract_error") is not None else None) or None,
+        origin=_normalize_origin(r.get("origin")),
     )
 
 
@@ -174,6 +198,7 @@ def _stored_file_to_row(f: StoredFile) -> dict[str, Any]:
         "size": f.size,
         "stored_relpath": f.stored_relpath,
         "uploaded_at_ms": f.uploaded_at_ms,
+        "origin": f.origin,
     }
     if f.extracted_relpath is not None:
         d["extracted_relpath"] = f.extracted_relpath
@@ -219,7 +244,14 @@ def read_file_extracted_markdown(project_id: str, file_id: str) -> str | None:
     return None
 
 
-def store_file(*, project_id: str, filename: str, content_type: str | None, content: bytes) -> StoredFile:
+def store_file(
+    *,
+    project_id: str,
+    filename: str,
+    content_type: str | None,
+    content: bytes,
+    origin: str = "user_upload",
+) -> StoredFile:
     pdir = _project_dir(project_id)
     pdir.mkdir(parents=True, exist_ok=True)
     files_dir = pdir / "files"
@@ -255,6 +287,7 @@ def store_file(*, project_id: str, filename: str, content_type: str | None, cont
         extracted_relpath=ex_rel,
         extracted_at_ms=ex_at,
         extract_error=None if ex_rel else (ex_err[:2000] if ex_err else "unknown"),
+        origin=_normalize_origin(origin),
     )
 
     mf = _files_manifest(project_id)
@@ -304,6 +337,7 @@ def refresh_file_extraction(*, project_id: str, file_id: str) -> StoredFile | No
         extracted_relpath=ex_rel,
         extracted_at_ms=ts,
         extract_error=None if ex_rel else ((err or "empty extract")[:2000]),
+        origin=meta.origin,
     )
     files = list_files(project_id)
     merged = [new if f.id == file_id else f for f in files]

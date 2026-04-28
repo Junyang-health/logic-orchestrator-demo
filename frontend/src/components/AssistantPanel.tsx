@@ -83,8 +83,6 @@ export default function AssistantPanel() {
 
   const [messages, setMessages] = useState<ChatRow[]>([]);
   const [draft, setDraft] = useState("");
-  const [persona, setPersona] = useState<string>(() => localStorage.getItem("mindmap_assistant_persona") || "");
-  const [applyInstruction, setApplyInstruction] = useState("");
   const [webSearchQuery, setWebSearchQuery] = useState<string>(() => localStorage.getItem("mindmap_web_search_query") || "");
   const [activeProjectId, setActiveProjectId] = useState(() => {
     try {
@@ -140,20 +138,13 @@ export default function AssistantPanel() {
   const [newSkillBody, setNewSkillBody] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
+  const [ingestWebBusy, setIngestWebBusy] = useState(false);
   const [error, setError] = useState("");
   const [skillImportUrl, setSkillImportUrl] = useState("");
   const [skillImportBusy, setSkillImportBusy] = useState(false);
   const [skillImportMessage, setSkillImportMessage] = useState("");
   /** Skill id → instruction panel expanded (default collapsed = details hidden). */
   const [skillDetailsOpen, setSkillDetailsOpen] = useState<Record<string, boolean>>({});
-  /** Collapse entire builtin + custom skills block to focus on chat. */
-  const [skillsBlockExpanded, setSkillsBlockExpanded] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("mindmap_skills_block_expanded") !== "0";
-    } catch {
-      return true;
-    }
-  });
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -163,14 +154,6 @@ export default function AssistantPanel() {
       /* ignore quota */
     }
   }, [customSkills]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("mindmap_skills_block_expanded", skillsBlockExpanded ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [skillsBlockExpanded]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -259,14 +242,6 @@ export default function AssistantPanel() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("mindmap_assistant_persona", persona);
-    } catch {
-      // ignore
-    }
-  }, [persona]);
-
-  useEffect(() => {
-    try {
       localStorage.setItem("mindmap_web_search_query", webSearchQuery);
     } catch {
       // ignore
@@ -291,19 +266,18 @@ export default function AssistantPanel() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!activeProjectId || !backendBase) {
-      setProjectFiles([]);
+  const loadProjectFiles = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!activeProjectId || !backendBase) {
+        setProjectFiles([]);
+        setProjectFilesLoadError(false);
+        return;
+      }
       setProjectFilesLoadError(false);
-      return;
-    }
-    const ac = new AbortController();
-    setProjectFilesLoadError(false);
-    (async () => {
       try {
         const res = await fetch(
           `${backendBase}/projects/${encodeURIComponent(activeProjectId)}/files`,
-          { signal: ac.signal }
+          { signal }
         );
         if (!res.ok) {
           setProjectFilesLoadError(true);
@@ -311,19 +285,68 @@ export default function AssistantPanel() {
           return;
         }
         const rows = (await res.json()) as { id: string; filename: string }[];
-        if (ac.signal.aborted) return;
+        if (signal?.aborted) return;
         setProjectFiles(
           Array.isArray(rows) ? rows.map((r) => ({ id: r.id, filename: r.filename || r.id })) : []
         );
       } catch {
-        if (!ac.signal.aborted) {
+        if (!signal?.aborted) {
           setProjectFilesLoadError(true);
           setProjectFiles([]);
         }
       }
-    })();
+    },
+    [activeProjectId, backendBase]
+  );
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void loadProjectFiles(ac.signal);
     return () => ac.abort();
-  }, [activeProjectId, backendBase]);
+  }, [loadProjectFiles]);
+
+  const ingestWebToSources = useCallback(async () => {
+    const projectId = activeProjectId?.trim() || "";
+    if (!projectId) {
+      setError(t("assistant_ingest_no_project"));
+      return;
+    }
+    const lines = webSearchQuery
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      setError(t("assistant_ingest_no_queries"));
+      return;
+    }
+    setIngestWebBusy(true);
+    setError("");
+    try {
+      const res = await fetch(
+        `${backendBase}/projects/${encodeURIComponent(projectId)}/files/ingest-web`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ queries: lines, max_results_per_query: 3, max_pages_ingest: 15 })
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const d = (err as { detail?: unknown }).detail;
+        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `ingest ${res.status}`);
+      }
+      const data = (await res.json()) as { stored: { id: string }[]; notices: string[] };
+      await loadProjectFiles();
+      const newIds = (data.stored || []).map((s) => s.id);
+      if (newIds.length > 0) {
+        setSelectedSourceFileIds((prev) => Array.from(new Set([...prev, ...newIds])));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("assistant_ingest_fail"));
+    } finally {
+      setIngestWebBusy(false);
+    }
+  }, [activeProjectId, backendBase, loadProjectFiles, t, webSearchQuery]);
 
   useEffect(() => {
     if (!activeProjectId) {
@@ -356,7 +379,6 @@ export default function AssistantPanel() {
   const {
     sendChat,
     applyToMindmap,
-    applyWithInstruction,
     fetchSkillFromUrl,
     runOptimismSimulation,
     blackSwanScan,
@@ -378,7 +400,6 @@ export default function AssistantPanel() {
     draft,
     chatBusy,
     messages,
-    persona,
     webSearchQuery,
     skillsWebSearch: skills.webSearch,
     assistantSourceFileIds: selectedSourceFileIds,
@@ -386,7 +407,6 @@ export default function AssistantPanel() {
     builtinPayload,
     sandboxMode,
     sandboxHasDrafts,
-    applyInstruction,
     skillImportUrl,
     skillImportBusy,
     meterInputs,
@@ -412,7 +432,6 @@ export default function AssistantPanel() {
     setError,
     setChatBusy,
     setApplyBusy,
-    setApplyInstruction,
     setSimBusy,
     setSimReport,
     setBsScenarios,
@@ -624,303 +643,313 @@ export default function AssistantPanel() {
         </div>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden border-b border-slate-200 p-2 dark:border-slate-800">
-        <div className="mb-3 ios-card p-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {t("assistant_session")}
-          </div>
-          <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-200">
-            {t("assistant_target_node")} <span className="font-mono">{selectedNode?.id ?? "—"}</span>
-          </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_sandbox_hint")}</div>
-          <label className="mt-2 block text-[11px] text-slate-700 dark:text-slate-200">
-            {t("assistant_persona")}
-            <input
-              className="mt-1 ios-input py-1.5"
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-              placeholder={t("assistant_persona_ph")}
-            />
-          </label>
-          {skills.webSearch && (
-            <label className="mt-2 block text-[11px] text-slate-700 dark:text-slate-200">
-              {t("assistant_web_query")}
-              <input
-                className="mt-1 ios-input py-1.5"
-                value={webSearchQuery}
-                onChange={(e) => setWebSearchQuery(e.target.value)}
-                placeholder={t("assistant_web_query_ph")}
-              />
-            </label>
-          )}
-          <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-200">
-            <div className="font-medium">{t("assistant_source_files")}</div>
-            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_hint")}</p>
-            {!activeProjectId ? (
-              <p className="mt-2 text-[10px] text-amber-800 dark:text-amber-200/90">{t("assistant_source_files_no_project")}</p>
-            ) : projectFilesLoadError ? (
-              <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{t("assistant_source_files_error")}</p>
-            ) : projectFiles.length === 0 ? (
-              <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_empty")}</p>
-            ) : (
-              <>
-                <div className="mt-1.5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="text-[10px] text-sky-600 underline dark:text-sky-400"
-                    onClick={() => setSelectedSourceFileIds(projectFiles.map((f) => f.id))}
-                  >
-                    {t("assistant_select_all_sources")}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[10px] text-sky-600 underline dark:text-sky-400"
-                    onClick={() => setSelectedSourceFileIds([])}
-                  >
-                    {t("assistant_select_no_sources")}
-                  </button>
-                </div>
-                <label className="mt-1.5 block">
-                  <span className="sr-only">{t("assistant_source_files")}</span>
-                  <select
-                    multiple
-                    size={Math.min(8, Math.max(3, projectFiles.length))}
-                    className="w-full max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                    value={selectedSourceFileIds}
-                    onChange={(e) => {
-                      const next = Array.from(e.target.selectedOptions, (o) => o.value);
-                      setSelectedSourceFileIds(next);
-                    }}
-                    aria-label={t("assistant_source_files")}
-                  >
-                    {projectFiles.map((f) => (
-                      <option key={f.id} value={f.id} title={f.filename}>
-                        {f.filename}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                  {t("assistant_source_files_selection_count", { n: selectedSourceFileIds.length })}
-                </p>
-              </>
-            )}
-          </div>
+      <div className="shrink-0 border-b border-slate-200 bg-slate-50/90 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-950/90">
+        <div className="ios-segment flex w-full flex-wrap justify-stretch gap-0.5">
+          <button
+            type="button"
+            className={[
+              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
+              mode === "chat" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+            ].join(" ")}
+            onClick={() => setMode("chat")}
+          >
+            {t("mode_chat")}
+          </button>
+          <button
+            type="button"
+            className={[
+              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
+              mode === "optimism" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+            ].join(" ")}
+            onClick={() => setMode("optimism")}
+          >
+            {t("mode_optimism")}
+          </button>
+          <button
+            type="button"
+            className={[
+              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
+              mode === "blackSwan" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+            ].join(" ")}
+            onClick={() => setMode("blackSwan")}
+          >
+            {t("mode_black_swan")}
+          </button>
+          <button
+            type="button"
+            className={[
+              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
+              mode === "mece" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+            ].join(" ")}
+            onClick={() => setMode("mece")}
+          >
+            {t("mode_mece")}
+          </button>
+          <button
+            type="button"
+            className={[
+              "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
+              mode === "roundtable" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+            ].join(" ")}
+            onClick={() => setMode("roundtable")}
+          >
+            {t("mode_roundtable")}
+          </button>
         </div>
-        {sandboxHasDrafts ? (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-[10px] text-slate-600 dark:text-slate-400">
-              {t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
-            </span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-[10px] text-slate-600 underline dark:text-slate-400"
-              onClick={discardDraft}
-            >
-              <RotateCcw className="h-3 w-3" />
-              {t("assistant_discard_draft")}
-            </button>
-          </div>
-        ) : null}
-
-        <div className="mb-3">
-          <div className="ios-segment flex w-full flex-wrap justify-stretch gap-0.5">
-            <button
-              type="button"
-              className={[
-                "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-                mode === "chat" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setMode("chat")}
-            >
-              {t("mode_chat")}
-            </button>
-            <button
-              type="button"
-              className={[
-                "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-                mode === "optimism" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setMode("optimism")}
-            >
-              {t("mode_optimism")}
-            </button>
-            <button
-              type="button"
-              className={[
-                "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-                mode === "blackSwan" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setMode("blackSwan")}
-            >
-              {t("mode_black_swan")}
-            </button>
-            <button
-              type="button"
-              className={[
-                "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-                mode === "mece" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setMode("mece")}
-            >
-              {t("mode_mece")}
-            </button>
-            <button
-              type="button"
-              className={[
-                "ios-segment-item min-w-0 flex-1 px-2 py-1.5 text-[10px] sm:text-sm",
-                mode === "roundtable" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setMode("roundtable")}
-            >
-              {t("mode_roundtable")}
-            </button>
-          </div>
-        </div>
-
-        {mode === "optimism" && (
-          <AssistantOptimismTab
-            branchFinancial={branchFinancial}
-            optimismMetricsAvailable={optimismMetricsAvailable}
-            optimismFocus={optimismFocus}
-            setOptimismFocus={setOptimismFocus}
-            currency={currency}
-            setCurrency={setCurrency}
-            optimismDeltaPct={optimismDeltaPct}
-            setOptimismDeltaPct={setOptimismDeltaPct}
-            optimismPreview={optimismPreview}
-            optimismAffected={optimismAffected}
-            simBusy={simBusy}
-            onApplyOptimism={runOptimismSimulation}
-          />
-        )}
-
-        {mode === "blackSwan" && (
-          <AssistantBlackSwanTab
-            selectedNodeId={selectedNode?.id}
-            simBusy={simBusy}
-            bsScenarios={bsScenarios}
-            bsSelectedScenarioIds={bsSelectedScenarioIds}
-            onToggleScenario={handleBsToggleScenario}
-            bsRunBundle={bsRunBundle}
-            bsMitigationPick={bsMitigationPick}
-            onToggleMitigation={handleBsToggleMitigation}
-            onScan={blackSwanScan}
-            onRun={blackSwanRun}
-            onApply={blackSwanApply}
-          />
-        )}
-
-        {mode === "mece" && (
-          <AssistantMeceTab
-            selectedNodeId={selectedNode?.id}
-            simBusy={simBusy}
-            meceScanBundle={meceScanBundle}
-            meceSelectedMods={meceSelectedMods}
-            onToggleModification={handleMeceToggleModification}
-            meceEvidenceBundle={meceEvidenceBundle}
-            meceWebHints={meceWebHints}
-            meceWebBusyId={meceWebBusyId}
-            onScan={meceScan}
-            onEvidence={meceEvidence}
-            onWebSearchForMod={meceWebSearchForMod}
-            onApply={meceApply}
-          />
-        )}
-
-        {mode === "roundtable" && (
-          <AssistantRoundtableTab
-            rtPersonas={rtPersonas}
-            rtLib={rtLib}
-            rtNewName={rtNewName}
-            setRtNewName={setRtNewName}
-            rtNewInstruction={rtNewInstruction}
-            setRtNewInstruction={setRtNewInstruction}
-            onAddPreset={addRtPreset}
-            onAddFromLib={addRtFromLib}
-            onRemovePersona={removeRtPersona}
-            onAddCustom={addRtCustom}
-          />
-        )}
-
-        {simReport && (
-          <div className="mb-3 ios-card p-3 text-[11px] text-slate-700 dark:text-slate-200">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              {t("assistant_sim_report")}
-            </div>
-            <pre className="whitespace-pre-wrap">{simReport}</pre>
-          </div>
-        )}
-
-        <AssistantSkillsBlock
-          skillsBlockExpanded={skillsBlockExpanded}
-          onToggleSkillsBlockExpanded={() => setSkillsBlockExpanded((v) => !v)}
-          builtinWebSearch={skills.webSearch}
-          builtinFinancialAnalyst={skills.financialAnalyst}
-          onToggleBuiltinSkill={toggleSkill}
-          customSkills={customSkills}
-          skillDetailsOpen={skillDetailsOpen}
-          onToggleSkillDetails={toggleSkillDetails}
-          onToggleCustomSkill={toggleCustom}
-          onUpdateSkillName={updateSkillName}
-          onUpdateSkillInstruction={updateSkillInstruction}
-          onRemoveSkill={removeSkill}
-          skillImportUrl={skillImportUrl}
-          onSkillImportUrlChange={(value) => {
-            setSkillImportUrl(value);
-            if (skillImportMessage) setSkillImportMessage("");
-          }}
-          skillImportBusy={skillImportBusy}
-          skillImportMessage={skillImportMessage}
-          onFetchSkillFromUrl={fetchSkillFromUrl}
-          newSkillName={newSkillName}
-          onNewSkillNameChange={setNewSkillName}
-          newSkillBody={newSkillBody}
-          onNewSkillBodyChange={setNewSkillBody}
-          onAddSkill={addSkill}
-        />
-
-        <AssistantTranscriptBlock
-          listRef={listRef}
-          isRoundtable={mode === "roundtable"}
-          messages={messages}
-          chatBusy={chatBusy}
-          rtTranscript={rtTranscript}
-          rtRoundBusy={rtRoundBusy}
-          rtProposal={rtProposal}
-          onClearChat={clearChat}
-          onClearRoundtable={clearRtTranscript}
-        />
       </div>
 
-      <AssistantPanelFooter
-        error={error}
-        mode={mode}
-        selectedNodeId={selectedNode?.id}
-        rtSteering={rtSteering}
-        onRtSteeringChange={setRtSteering}
-        rtRoundBusy={rtRoundBusy}
-        rtPersonasCount={rtPersonas.length}
-        onRunRoundtableRound={runRoundtableRound}
-        rtProposeBusy={rtProposeBusy}
-        rtTranscriptCount={rtTranscript.length}
-        onProposeRoundtable={proposeRoundtable}
-        hasRoundtableProposal={Boolean(rtProposal)}
-        rtConfirmApply={rtConfirmApply}
-        onRtConfirmApplyChange={setRtConfirmApply}
-        rtApplyBusy={rtApplyBusy}
-        onApplyRoundtablePatch={applyRoundtablePatch}
-        applyInstruction={applyInstruction}
-        onApplyInstructionChange={setApplyInstruction}
-        applyBusy={applyBusy}
-        draft={draft}
-        onDraftChange={setDraft}
-        chatBusy={chatBusy}
-        onSendChat={runSendChat}
-        messagesCount={messages.length}
-        onApplyToMindmap={applyToMindmap}
-        onApplyWithInstruction={applyWithInstruction}
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="min-h-0 flex-[1_1_50%] overflow-y-auto overflow-x-hidden border-b border-slate-200 p-2 dark:border-slate-800">
+          <div className="mb-3 ios-card p-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {t("assistant_session")}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-200">
+              {t("assistant_target_node")} <span className="font-mono">{selectedNode?.id ?? "—"}</span>
+            </div>
+            <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_sandbox_hint")}</div>
+            {skills.webSearch && (
+              <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-200">
+                <label className="block" htmlFor="assistant-web-search-queries">
+                  {t("assistant_web_query")}
+                </label>
+                <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_web_query_help")}</p>
+                <textarea
+                  id="assistant-web-search-queries"
+                  className="mt-1 min-h-[4.5rem] w-full resize-y rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  rows={4}
+                  value={webSearchQuery}
+                  onChange={(e) => setWebSearchQuery(e.target.value)}
+                  placeholder={t("assistant_web_query_ph")}
+                />
+                {activeProjectId ? (
+                  <div className="mt-1.5">
+                    <button
+                      type="button"
+                      className="ios-button w-full py-1.5 text-[10px] disabled:opacity-50"
+                      disabled={ingestWebBusy}
+                      onClick={ingestWebToSources}
+                    >
+                      {ingestWebBusy ? t("assistant_web_ingest_busy") : t("assistant_web_ingest_cta")}
+                    </button>
+                    <p className="mt-0.5 text-[9px] text-slate-500 dark:text-slate-500">{t("assistant_web_ingest_hint")}</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+            <div className="mt-2 text-[11px] text-slate-700 dark:text-slate-200">
+              <div className="font-medium">{t("assistant_source_files")}</div>
+              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_hint")}</p>
+              {!activeProjectId ? (
+                <p className="mt-2 text-[10px] text-amber-800 dark:text-amber-200/90">{t("assistant_source_files_no_project")}</p>
+              ) : projectFilesLoadError ? (
+                <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{t("assistant_source_files_error")}</p>
+              ) : projectFiles.length === 0 ? (
+                <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">{t("assistant_source_files_empty")}</p>
+              ) : (
+                <>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="text-[10px] text-sky-600 underline dark:text-sky-400"
+                      onClick={() => setSelectedSourceFileIds(projectFiles.map((f) => f.id))}
+                    >
+                      {t("assistant_select_all_sources")}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[10px] text-sky-600 underline dark:text-sky-400"
+                      onClick={() => setSelectedSourceFileIds([])}
+                    >
+                      {t("assistant_select_no_sources")}
+                    </button>
+                  </div>
+                  <label className="mt-1.5 block">
+                    <span className="sr-only">{t("assistant_source_files")}</span>
+                    <select
+                      multiple
+                      size={Math.min(8, Math.max(3, projectFiles.length))}
+                      className="w-full max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      value={selectedSourceFileIds}
+                      onChange={(e) => {
+                        const next = Array.from(e.target.selectedOptions, (o) => o.value);
+                        setSelectedSourceFileIds(next);
+                      }}
+                      aria-label={t("assistant_source_files")}
+                    >
+                      {projectFiles.map((f) => (
+                        <option key={f.id} value={f.id} title={f.filename}>
+                          {f.filename}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                    {t("assistant_source_files_selection_count", { n: selectedSourceFileIds.length })}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          {sandboxHasDrafts ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-[10px] text-slate-600 dark:text-slate-400">
+                {t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
+              </span>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-[10px] text-slate-600 underline dark:text-slate-400"
+                onClick={discardDraft}
+              >
+                <RotateCcw className="h-3 w-3" />
+                {t("assistant_discard_draft")}
+              </button>
+            </div>
+          ) : null}
+
+          <AssistantTranscriptBlock
+            listRef={listRef}
+            isRoundtable={mode === "roundtable"}
+            messages={messages}
+            chatBusy={chatBusy}
+            rtTranscript={rtTranscript}
+            rtRoundBusy={rtRoundBusy}
+            rtProposal={rtProposal}
+            onClearChat={clearChat}
+            onClearRoundtable={clearRtTranscript}
+          />
+        </div>
+
+        {(mode !== "chat" || simReport) ? (
+        <div className="max-h-[min(50vh,28rem)] shrink-0 overflow-y-auto overflow-x-hidden border-b border-slate-200 bg-slate-50/80 p-2 dark:border-slate-800 dark:bg-slate-950/80">
+          {mode === "optimism" && (
+            <AssistantOptimismTab
+              branchFinancial={branchFinancial}
+              optimismMetricsAvailable={optimismMetricsAvailable}
+              optimismFocus={optimismFocus}
+              setOptimismFocus={setOptimismFocus}
+              currency={currency}
+              setCurrency={setCurrency}
+              optimismDeltaPct={optimismDeltaPct}
+              setOptimismDeltaPct={setOptimismDeltaPct}
+              optimismPreview={optimismPreview}
+              optimismAffected={optimismAffected}
+              simBusy={simBusy}
+              onApplyOptimism={runOptimismSimulation}
+            />
+          )}
+
+          {mode === "blackSwan" && (
+            <AssistantBlackSwanTab
+              selectedNodeId={selectedNode?.id}
+              simBusy={simBusy}
+              bsScenarios={bsScenarios}
+              bsSelectedScenarioIds={bsSelectedScenarioIds}
+              onToggleScenario={handleBsToggleScenario}
+              bsRunBundle={bsRunBundle}
+              bsMitigationPick={bsMitigationPick}
+              onToggleMitigation={handleBsToggleMitigation}
+              onScan={blackSwanScan}
+              onRun={blackSwanRun}
+              onApply={blackSwanApply}
+            />
+          )}
+
+          {mode === "mece" && (
+            <AssistantMeceTab
+              selectedNodeId={selectedNode?.id}
+              simBusy={simBusy}
+              meceScanBundle={meceScanBundle}
+              meceSelectedMods={meceSelectedMods}
+              onToggleModification={handleMeceToggleModification}
+              meceEvidenceBundle={meceEvidenceBundle}
+              meceWebHints={meceWebHints}
+              meceWebBusyId={meceWebBusyId}
+              onScan={meceScan}
+              onEvidence={meceEvidence}
+              onWebSearchForMod={meceWebSearchForMod}
+              onApply={meceApply}
+            />
+          )}
+
+          {mode === "roundtable" && (
+            <AssistantRoundtableTab
+              rtPersonas={rtPersonas}
+              rtLib={rtLib}
+              rtNewName={rtNewName}
+              setRtNewName={setRtNewName}
+              rtNewInstruction={rtNewInstruction}
+              setRtNewInstruction={setRtNewInstruction}
+              onAddPreset={addRtPreset}
+              onAddFromLib={addRtFromLib}
+              onRemovePersona={removeRtPersona}
+              onAddCustom={addRtCustom}
+            />
+          )}
+
+          {simReport ? (
+            <div className="mt-3 ios-card p-3 text-[11px] text-slate-700 dark:text-slate-200">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {t("assistant_sim_report")}
+              </div>
+              <pre className="whitespace-pre-wrap">{simReport}</pre>
+            </div>
+          ) : null}
+        </div>
+        ) : null}
+
+        <AssistantPanelFooter
+          error={error}
+          mode={mode}
+          selectedNodeId={selectedNode?.id}
+          rtSteering={rtSteering}
+          onRtSteeringChange={setRtSteering}
+          rtRoundBusy={rtRoundBusy}
+          rtPersonasCount={rtPersonas.length}
+          onRunRoundtableRound={runRoundtableRound}
+          rtProposeBusy={rtProposeBusy}
+          rtTranscriptCount={rtTranscript.length}
+          onProposeRoundtable={proposeRoundtable}
+          hasRoundtableProposal={Boolean(rtProposal)}
+          rtConfirmApply={rtConfirmApply}
+          onRtConfirmApplyChange={setRtConfirmApply}
+          rtApplyBusy={rtApplyBusy}
+          onApplyRoundtablePatch={applyRoundtablePatch}
+          applyBusy={applyBusy}
+          draft={draft}
+          onDraftChange={setDraft}
+          chatBusy={chatBusy}
+          onSendChat={runSendChat}
+          messagesCount={messages.length}
+          onApplyToMindmap={applyToMindmap}
+        >
+          <AssistantSkillsBlock
+            builtinWebSearch={skills.webSearch}
+            builtinFinancialAnalyst={skills.financialAnalyst}
+            onToggleBuiltinSkill={toggleSkill}
+            customSkills={customSkills}
+            skillDetailsOpen={skillDetailsOpen}
+            onToggleSkillDetails={toggleSkillDetails}
+            onToggleCustomSkill={toggleCustom}
+            onUpdateSkillName={updateSkillName}
+            onUpdateSkillInstruction={updateSkillInstruction}
+            onRemoveSkill={removeSkill}
+            skillImportUrl={skillImportUrl}
+            onSkillImportUrlChange={(value) => {
+              setSkillImportUrl(value);
+              if (skillImportMessage) setSkillImportMessage("");
+            }}
+            skillImportBusy={skillImportBusy}
+            skillImportMessage={skillImportMessage}
+            onFetchSkillFromUrl={fetchSkillFromUrl}
+            newSkillName={newSkillName}
+            onNewSkillNameChange={setNewSkillName}
+            newSkillBody={newSkillBody}
+            onNewSkillBodyChange={setNewSkillBody}
+            onAddSkill={addSkill}
+          />
+        </AssistantPanelFooter>
+      </div>
     </div>
   );
 }

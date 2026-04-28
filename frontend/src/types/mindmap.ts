@@ -2,6 +2,10 @@ export type MindmapNode = {
   id: string;
   type: string;
   label: string;
+  /**
+   * May include e.g. `collision_logic` / `collision_facts` (one-line copy for on-map chips) when
+   * validation or the mindmap LLM flags logic vs cross-source fact tension.
+   */
   metadata?: Record<string, unknown>;
   status?: "firm" | "draft" | "conflict" | "unstable";
   clusterId?: string;

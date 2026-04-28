@@ -21,7 +21,6 @@ export type AssistantPanelActionsCtx = {
   draft: string;
   chatBusy: boolean;
   messages: ChatRow[];
-  persona: string;
   webSearchQuery: string;
   skillsWebSearch: boolean;
   /** Project file ids to attach to chat/apply; empty = do not send source text. */
@@ -30,7 +29,6 @@ export type AssistantPanelActionsCtx = {
   builtinPayload: { webSearch: boolean; financialAnalyst: boolean };
   sandboxMode: boolean;
   sandboxHasDrafts: boolean;
-  applyInstruction: string;
   skillImportUrl: string;
   skillImportBusy: boolean;
   meterInputs: MeterInputs | null;
@@ -60,7 +58,6 @@ export type AssistantPanelActionsCtx = {
   setError: Dispatch<SetStateAction<string>>;
   setChatBusy: Dispatch<SetStateAction<boolean>>;
   setApplyBusy: Dispatch<SetStateAction<boolean>>;
-  setApplyInstruction: Dispatch<SetStateAction<string>>;
   setSimBusy: Dispatch<SetStateAction<boolean>>;
   setSimReport: Dispatch<SetStateAction<string>>;
   setBsScenarios: Dispatch<SetStateAction<BlackSwanScenario[] | null>>;
@@ -128,12 +125,7 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
           full_edges: c.combined.edges,
           selected_node_id: c.selectedNodeId ?? null,
           web_search_query: c.skillsWebSearch ? c.webSearchQuery.trim() || null : null,
-          custom_skills: [
-            ...(c.persona.trim()
-              ? [{ name: "AI persona", instruction: `Adopt this persona while discussing: ${c.persona.trim()}`, enabled: true }]
-              : []),
-            ...c.payloadSkills
-          ],
+          custom_skills: c.payloadSkills,
           builtin_skills: c.builtinPayload,
           sandbox_mode: c.sandboxMode,
           project_id: projectId || null,
@@ -183,12 +175,7 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
           full_nodes: c.combined.nodes,
           full_edges: c.combined.edges,
           messages: apiMessages,
-          custom_skills: [
-            ...(c.persona.trim()
-              ? [{ name: "AI persona", instruction: `Adopt this persona while discussing: ${c.persona.trim()}`, enabled: true }]
-              : []),
-            ...c.payloadSkills
-          ],
+          custom_skills: c.payloadSkills,
           builtin_skills: c.builtinPayload,
           sandbox_mode: c.sandboxMode || c.sandboxHasDrafts,
           project_id: projectId || null,
@@ -205,70 +192,6 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
       const data = (await res.json()) as { mindmap: MindmapJson };
       c.loadMainGraph(data.mindmap, { newMarks: "diff" });
       c.clearSandbox();
-      c.setApplyInstruction("");
-      useUiStore.getState().setSelectedNode(null);
-      useUiStore.getState().closeAssistantSession();
-    } catch (e) {
-      c.setError(e instanceof Error ? e.message : "Apply request failed");
-    } finally {
-      c.setApplyBusy(false);
-    }
-  }, [ref]);
-
-  const applyWithInstruction = useCallback(async () => {
-    const c = ref.current;
-    const instr = c.applyInstruction.trim();
-    if (!instr) return;
-    if (!c.selectedNodeId) {
-      c.setError("Select a branch root node on the canvas before applying.");
-      return;
-    }
-    if (c.messages.length === 0) {
-      c.setError("Have at least one message in the conversation before applying.");
-      return;
-    }
-    c.setApplyBusy(true);
-    c.setError("");
-    try {
-      const projectId =
-        typeof localStorage !== "undefined" ? (localStorage.getItem("mindmap_project_id") || "").trim() : "";
-      const src = c.assistantSourceFileIds;
-      const includeSources = src.length > 0;
-      const apiMessages = [
-        ...c.messages.map((m) => ({ role: m.role, content: m.content })),
-        { role: "user" as const, content: `Apply instruction (highest priority): ${instr}` }
-      ];
-      const res = await fetch(`${c.backendBase}/assistant/apply`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branch_root_id: c.selectedNodeId,
-          full_nodes: c.combined.nodes,
-          full_edges: c.combined.edges,
-          messages: apiMessages,
-          custom_skills: [
-            ...(c.persona.trim()
-              ? [{ name: "AI persona", instruction: `Adopt this persona while discussing: ${c.persona.trim()}`, enabled: true }]
-              : []),
-            ...c.payloadSkills
-          ],
-          builtin_skills: c.builtinPayload,
-          sandbox_mode: c.sandboxMode || c.sandboxHasDrafts,
-          project_id: projectId || null,
-          include_project_sources: includeSources,
-          source_file_ids: includeSources ? src : [],
-          source_max_chars: 40_000
-        })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        const d = (err as { detail?: unknown }).detail;
-        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Apply failed (${res.status})`);
-      }
-      const data = (await res.json()) as { mindmap: MindmapJson };
-      c.loadMainGraph(data.mindmap, { newMarks: "diff" });
-      c.clearSandbox();
-      c.setApplyInstruction("");
       useUiStore.getState().setSelectedNode(null);
       useUiStore.getState().closeAssistantSession();
     } catch (e) {
@@ -833,7 +756,6 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
     () => ({
       sendChat,
       applyToMindmap,
-      applyWithInstruction,
       fetchSkillFromUrl,
       runOptimismSimulation,
       blackSwanScan,
@@ -850,7 +772,6 @@ export function useAssistantPanelActions(ctxRef: MutableRefObject<AssistantPanel
     [
       sendChat,
       applyToMindmap,
-      applyWithInstruction,
       fetchSkillFromUrl,
       runOptimismSimulation,
       blackSwanScan,

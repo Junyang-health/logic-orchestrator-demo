@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Image as ImageIcon, Trash2, Upload } from "lucide-react";
 import { useI18n } from "../i18n/useI18n";
+import { MIN_INTENT_BOOTSTRAP, runMindmapBuild } from "../lib/mindmapBuild";
 import useUiStore from "../store/useUiStore";
 import { combineGraphs } from "../lib/graphBranch";
 import { classifySourceKind } from "../types/sourceMaterial";
@@ -14,11 +15,19 @@ import type { MindmapJson } from "../types/mindmap";
  */
 let lastAutoFetchedCanvasProjectId: string | null = null;
 
-type Project = { id: string; name: string };
-type StoredFile = { id: string; filename: string; size: number; content_type?: string | null; uploaded_at_ms: number };
+const PREV_PROJECT_SESSION_KEY = "mindmap_prev_project_id";
 
-/** Minimum characters in intent / goal for a starter mindmap with no source files (matches backend). */
-const MIN_INTENT_BOOTSTRAP = 12;
+type Project = { id: string; name: string };
+type StoredFile = {
+  id: string;
+  filename: string;
+  size: number;
+  content_type?: string | null;
+  uploaded_at_ms: number;
+  origin?: string;
+};
+
+type SourceSortKey = "date_new" | "date_old" | "type" | "origin";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -26,12 +35,53 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function fileExtension(fn: string): string {
+  const i = fn.lastIndexOf(".");
+  return i >= 0 ? fn.slice(i + 1).toLowerCase() : "";
+}
+
+function sortStoredFiles(files: StoredFile[], key: SourceSortKey): StoredFile[] {
+  const out = [...files];
+  switch (key) {
+    case "date_new":
+      return out.sort((a, b) => b.uploaded_at_ms - a.uploaded_at_ms);
+    case "date_old":
+      return out.sort((a, b) => a.uploaded_at_ms - b.uploaded_at_ms);
+    case "type":
+      return out.sort((a, b) => {
+        const ea = fileExtension(a.filename);
+        const eb = fileExtension(b.filename);
+        const c = ea.localeCompare(eb);
+        if (c !== 0) return c;
+        return a.filename.localeCompare(b.filename);
+      });
+    case "origin":
+      return out.sort((a, b) => {
+        const oa = a.origin === "llm_ingest" ? 1 : 0;
+        const ob = b.origin === "llm_ingest" ? 1 : 0;
+        if (oa !== ob) return oa - ob;
+        return b.uploaded_at_ms - a.uploaded_at_ms;
+      });
+    default:
+      return out;
+  }
+}
+
 export default function SourceMaterialPanel(props: { backendBase: string }) {
   const { t, locale } = useI18n();
+  const projectId = useUiStore((s) => s.projectId);
+  const setProjectId = useUiStore((s) => s.setProjectId);
+  const projects = useUiStore((s) => s.projects);
+  const setProjects = useUiStore((s) => s.setProjects);
+  const intent = useUiStore((s) => s.intent);
+  const setIntent = useUiStore((s) => s.setIntent);
+  const openProjectLanding = useUiStore((s) => s.openProjectLanding);
+
   const sourceFiles = useUiStore((s) => s.sourceFiles);
   const addSourceFiles = useUiStore((s) => s.addSourceFiles);
   const removeSourceFile = useUiStore((s) => s.removeSourceFile);
   const clearSourceFiles = useUiStore((s) => s.clearSourceFiles);
+  const setProjectSelectedFileIds = useUiStore((s) => s.setProjectSelectedFileIds);
   const loadMainGraph = useUiStore((s) => s.loadMainGraph);
   const mainGraph = useUiStore((s) => s.mainGraph);
   const sandboxGraph = useUiStore((s) => s.sandboxGraph);
@@ -42,17 +92,18 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("mindmap_project_id") || "");
   const [newProjectName, setNewProjectName] = useState("");
   const [storedFiles, setStoredFiles] = useState<StoredFile[]>([]);
   /** Stored file ids to include when generating from the project (not the upload queue). */
   const [selectedStoredIds, setSelectedStoredIds] = useState<string[]>([]);
+  const [sourceSort, setSourceSort] = useState<SourceSortKey>("date_new");
   const prevStoredIdsRef = useRef<string[]>([]);
-  const [intent, setIntent] = useState<string>(() => localStorage.getItem("mindmap_intent") || "");
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [savedCanvasUpdatedMs, setSavedCanvasUpdatedMs] = useState<number | null>(null);
+  const [projectDeleteBusy, setProjectDeleteBusy] = useState(false);
+
+  const sortedStoredFiles = useMemo(() => sortStoredFiles(storedFiles, sourceSort), [storedFiles, sourceSort]);
 
   const projectDownloadBase = useMemo(() => {
     return projectId ? `${props.backendBase}/projects/${encodeURIComponent(projectId)}/files` : "";
@@ -62,6 +113,10 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     () => combineGraphs(mainGraph, sandboxGraph).nodes.length > 0,
     [mainGraph, sandboxGraph]
   );
+
+  useEffect(() => {
+    setProjectSelectedFileIds(selectedStoredIds);
+  }, [selectedStoredIds, setProjectSelectedFileIds]);
 
   const trimmedIntent = intent.trim();
   const canGenerateFromStoredSelection =
@@ -86,7 +141,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     const data = (await res.json()) as Project[];
     setProjects(data);
     return data;
-  }, [props.backendBase]);
+  }, [props.backendBase, setProjects]);
 
   const refreshStoredFiles = useCallback(async () => {
     if (!projectId) {
@@ -186,7 +241,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           if (res.ok) {
             const p = (await res.json()) as Project;
             setProjectId(p.id);
-            localStorage.setItem("mindmap_project_id", p.id);
             setProjects([p]);
           }
         }
@@ -199,12 +253,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("mindmap_project_id", projectId);
-    try {
-      window.dispatchEvent(new CustomEvent("mindmap:projectId", { detail: { projectId } }));
-    } catch {
-      /* ignore */
-    }
     refreshStoredFiles().catch(() => {});
     if (lastAutoFetchedCanvasProjectId === projectId) {
       return;
@@ -236,153 +284,95 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     });
   }, [storedFiles]);
 
-  useEffect(() => {
-    localStorage.setItem("mindmap_intent", intent);
-  }, [intent]);
+  const messages = useMemo(
+    () => ({
+      netError: t("err_net"),
+      pickFiles: t("err_pick_files"),
+      addFilesOrIntent: t("err_add_files_intent", { n: MIN_INTENT_BOOTSTRAP })
+    }),
+    [t, locale]
+  );
+
+  const deleteEntireProject = useCallback(async () => {
+    const pid = projectId.trim();
+    if (!pid) return;
+    const meta = projects.find((p) => p.id === pid);
+    const name = meta?.name ?? pid;
+    if (!window.confirm(t("sm_project_delete_confirm", { name, id: pid }))) return;
+    setProjectDeleteBusy(true);
+    setError("");
+    setSaveMessage("");
+    try {
+      const res = await fetch(`${props.backendBase}/projects/${encodeURIComponent(pid)}`, { method: "DELETE" });
+      const raw = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = (raw as { detail?: unknown }).detail;
+        setError(typeof d === "string" ? d : t("sm_project_delete_err"));
+        return;
+      }
+      const cur = useUiStore.getState().projects;
+      setProjects(cur.filter((p) => p.id !== pid));
+      if (lastAutoFetchedCanvasProjectId === pid) {
+        lastAutoFetchedCanvasProjectId = null;
+      }
+      if (useUiStore.getState().projectId === pid) {
+        setProjectId("");
+        loadMainGraph({ nodes: [], edges: [] });
+        clearSandbox();
+        setSandboxMode(false);
+        useUiStore.getState().setSelectedNode(null);
+        setStoredFiles([]);
+        setSelectedStoredIds([]);
+        setSavedCanvasUpdatedMs(null);
+        setSaveMessage(t("sm_project_deleted_canvas_cleared"));
+      }
+    } catch {
+      setError(t("err_delete_net"));
+    } finally {
+      setProjectDeleteBusy(false);
+    }
+  }, [
+    projectId,
+    projects,
+    props.backendBase,
+    setProjects,
+    setProjectId,
+    loadMainGraph,
+    clearSandbox,
+    setSandboxMode,
+    t
+  ]);
 
   const buildMindmap = useCallback(async () => {
-    if (sourceFiles.length === 0) {
-      // Prefer generating from explicitly selected stored project files when available.
-      if (canGenerateFromStoredSelection) {
-        setBusy(true);
-        setError("");
-        try {
-          const url = `${props.backendBase}/projects/${encodeURIComponent(projectId)}/mindmap`;
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              intent: intent.trim() || null,
-              file_ids: selectedStoredIds
-            })
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            const d = (err as { detail?: unknown }).detail;
-            setError(
-              typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Generate failed (${res.status})`
-            );
-            return;
-          }
-          const payload = (await res.json()) as any;
-          const json = (payload?.mindmap ?? payload) as MindmapJson;
-          loadMainGraph(json);
-          return;
-        } catch {
-          setError(t("err_net"));
-          return;
-        } finally {
-          setBusy(false);
-        }
-      }
-
-      // No queued files and no stored selection: starter mindmap from intent only (no source material).
-      if (trimmedIntent.length >= MIN_INTENT_BOOTSTRAP) {
-        setBusy(true);
-        setError("");
-        try {
-          if (projectId) {
-            const url = `${props.backendBase}/projects/${encodeURIComponent(projectId)}/mindmap`;
-            const res = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                intent: trimmedIntent,
-                bootstrap_without_sources: true
-              })
-            });
-            if (!res.ok) {
-              const err = await res.json().catch(() => ({}));
-              const d = (err as { detail?: unknown }).detail;
-              setError(
-                typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Generate failed (${res.status})`
-              );
-              return;
-            }
-            const payload = (await res.json()) as { mindmap?: MindmapJson };
-            const json = (payload?.mindmap ?? payload) as MindmapJson;
-            loadMainGraph(json);
-            return;
-          }
-          const res = await fetch(`${props.backendBase}/mindmap/from-intent`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ intent: trimmedIntent })
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            const d = (err as { detail?: unknown }).detail;
-            setError(
-              typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Generate failed (${res.status})`
-            );
-            return;
-          }
-          const payload = (await res.json()) as { mindmap?: MindmapJson };
-          const json = (payload?.mindmap ?? payload) as MindmapJson;
-          loadMainGraph(json);
-          return;
-        } catch {
-          setError(t("err_net"));
-          return;
-        } finally {
-          setBusy(false);
-        }
-      }
-
-      if (projectId && storedFiles.length > 0 && selectedStoredIds.length === 0) {
-        setError(t("err_pick_files"));
-        return;
-      }
-
-      setError(t("err_add_files_intent", { n: MIN_INTENT_BOOTSTRAP }));
-      return;
-    }
     setBusy(true);
     setError("");
-    try {
-      const fd = new FormData();
-      if (projectId) fd.append("project_id", projectId);
-      if (intent.trim()) fd.append("intent", intent.trim());
-      for (const e of sourceFiles) {
-        fd.append("files", e.file, e.file.name);
-      }
-      const res = await fetch(`${props.backendBase}/upload`, {
-        method: "POST",
-        body: fd
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        const d = (err as { detail?: unknown }).detail;
-        setError(
-          typeof d === "string" ? d : d != null ? JSON.stringify(d) : `Upload failed (${res.status})`
-        );
-        return;
-      }
-      const payload = (await res.json()) as any;
-      const json = (payload?.mindmap ?? payload) as MindmapJson;
-      loadMainGraph(json);
-      // Clear queued files but keep the project list.
-      clearSourceFiles();
-      refreshStoredFiles().catch(() => {});
-    } catch {
-      setError(t("err_net"));
-    } finally {
-      setBusy(false);
+    const result = await runMindmapBuild({
+      backendBase: props.backendBase,
+      projectId,
+      intent,
+      sourceFiles,
+      selectedStoredIds,
+      storedFilesCount: storedFiles.length,
+      loadMainGraph,
+      clearSourceFiles,
+      refreshStoredFiles,
+      messages
+    });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
     }
   }, [
     props.backendBase,
-    sourceFiles,
-    loadMainGraph,
     projectId,
+    intent,
+    sourceFiles,
+    selectedStoredIds,
+    storedFiles.length,
+    loadMainGraph,
     clearSourceFiles,
     refreshStoredFiles,
-    storedFiles,
-    intent,
-    selectedStoredIds,
-    canGenerateFromStoredSelection,
-    trimmedIntent,
-    t,
-    locale
+    messages
   ]);
 
   return (
@@ -393,6 +383,27 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           <p className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-slate-300">{t("sm_intro")}</p>
         </div>
         <Upload className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+      </div>
+
+      <div className="mt-3">
+        <button
+          type="button"
+          className="ios-button-primary w-full py-2 text-[12px]"
+          onClick={() => {
+            try {
+              const cur = useUiStore.getState().projectId;
+              if (cur) sessionStorage.setItem(PREV_PROJECT_SESSION_KEY, cur);
+            } catch {
+              /* ignore */
+            }
+            openProjectLanding("new_project");
+          }}
+        >
+          {t("sm_new_project_wizard")}
+        </button>
+        <button type="button" className="mt-1.5 text-[10px] text-sky-700 underline dark:text-sky-400" onClick={() => openProjectLanding("first_visit")}>
+          {t("sm_open_setup")}
+        </button>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -412,7 +423,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           </select>
         </label>
         <div className="text-[11px] text-slate-700 dark:text-slate-200">
-          {t("sm_new_project")}
+          {t("sm_quick_create")}
           <div className="mt-1 flex gap-2">
             <input
               className="ios-input py-1.5"
@@ -430,7 +441,8 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                 });
                 if (!res.ok) return;
                 const p = (await res.json()) as Project;
-                setProjects((cur) => [p, ...cur]);
+                const cur = useUiStore.getState().projects;
+                setProjects([p, ...cur.filter((x) => x.id !== p.id)]);
                 setProjectId(p.id);
                 setNewProjectName("");
               }}
@@ -448,7 +460,8 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                 });
                 if (!res.ok) return;
                 const p = (await res.json()) as Project;
-                setProjects((cur) => [p, ...cur]);
+                const cur = useUiStore.getState().projects;
+                setProjects([p, ...cur.filter((x) => x.id !== p.id)]);
                 setProjectId(p.id);
                 setNewProjectName("");
               }}
@@ -458,6 +471,16 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50/80 py-1.5 text-[11px] font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 disabled:opacity-50"
+        disabled={!projectId || projectDeleteBusy}
+        onClick={() => void deleteEntireProject()}
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        {t("sm_project_delete_btn")}
+      </button>
 
       {projectId ? (
         <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-2.5 dark:border-slate-600 dark:bg-slate-950/40">
@@ -571,6 +594,19 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
               {t("sm_stored_line", { files: storedFiles.length, n: selectedStoredIds.length })}
             </span>
             <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1 text-[10px]">
+                <span className="text-slate-500">{t("sm_sort_label")}</span>
+                <select
+                  className="ios-select max-w-[10rem] py-1 text-[10px]"
+                  value={sourceSort}
+                  onChange={(e) => setSourceSort(e.target.value as SourceSortKey)}
+                >
+                  <option value="date_new">{t("sm_sort_date_new")}</option>
+                  <option value="date_old">{t("sm_sort_date_old")}</option>
+                  <option value="type">{t("sm_sort_type")}</option>
+                  <option value="origin">{t("sm_sort_origin")}</option>
+                </select>
+              </label>
               <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => refreshStoredFiles()}>
                 {t("sm_refresh")}
               </button>
@@ -588,8 +624,10 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           </div>
           <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("sm_stored_help")}</p>
           <ul className="mt-1 max-h-40 space-y-1 overflow-auto rounded-xl border border-slate-200 bg-white/60 p-1 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/30">
-            {storedFiles.map((f) => {
+            {sortedStoredFiles.map((f) => {
               const checked = selectedStoredIds.includes(f.id);
+              const originLabel =
+                f.origin === "llm_ingest" ? t("sm_origin_llm") : t("sm_origin_user");
               return (
                 <li key={f.id} className="flex items-center gap-2 rounded-lg bg-white/80 px-2 py-1.5 text-[11px] dark:bg-slate-900/60">
                   <input
@@ -606,6 +644,9 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                   <a className="min-w-0 flex-1 truncate font-medium text-slate-800 underline dark:text-slate-100" href={`${projectDownloadBase}/${encodeURIComponent(f.id)}`} target="_blank" rel="noreferrer" title={t("sm_download")} onClick={(e) => e.stopPropagation()}>
                     {f.filename}
                   </a>
+                  <span className="hidden shrink-0 text-[9px] text-slate-400 sm:inline" title={t("sm_sort_origin")}>
+                    {originLabel}
+                  </span>
                   <span className="shrink-0 text-slate-500">{formatBytes(f.size)}</span>
                   <button type="button" className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-red-700 shadow-sm backdrop-blur-xl hover:bg-white dark:border-slate-700 dark:bg-slate-950/40 dark:text-red-300 dark:hover:bg-slate-950/60" onClick={async () => {
                       if (!projectId) return;

@@ -69,3 +69,61 @@ def format_results_for_prompt(results: list[TavilyResult]) -> str:
         lines.append(f"{i}. {title}\n   {r.url}\n   {snippet}".rstrip())
     return "\n".join(lines)
 
+
+def format_multi_queries_for_prompt(sections: list[tuple[str, list[TavilyResult]]]) -> str:
+    """Group Tavily results by search query; deduplicate URLs across the whole run (mark repeats)."""
+    if not sections:
+        return "(no results)"
+    seen: set[str] = set()
+    blocks: list[str] = []
+    for q, results in sections:
+        sub: list[str] = [f"**Query:** {q.strip() or '(empty)'}"]
+        if not results:
+            sub.append("  (no hits for this query)")
+        for r in results:
+            u = (r.url or "").strip()
+            if not u:
+                continue
+            if u in seen:
+                sub.append(f"  (same URL as earlier) {u[:500]}")
+                continue
+            seen.add(u)
+            title = (r.title or "(no title)")[:200]
+            snip = (r.content or "")[:420]
+            sub.append(f"  - {title}\n    {u}\n    {snip}")
+        blocks.append("\n".join(sub))
+    return "\n\n".join(blocks)
+
+
+def resolve_assistant_search_queries(
+    web_search_query: str | None,
+    messages: list[dict[str, str]],
+    *,
+    max_queries: int = 12,
+) -> list[str]:
+    """
+    - If the explicit web search box is non-empty: one query per non-empty line (up to max_queries, each max 240 chars).
+    - If empty: use the latest user message. If that message has multiple non-empty lines, use each as a query;
+      otherwise a single query from the full message (max 240 chars).
+    """
+    ex = (web_search_query or "").strip()
+    if ex:
+        lines = [p.strip() for p in ex.splitlines() if p.strip()]
+        if not lines:
+            return []
+        if len(lines) == 1:
+            return [lines[0][:240]]
+        return [p[:240] for p in lines[:max_queries]]
+
+    for m in reversed(messages):
+        if (m.get("role") or "").strip().lower() != "user":
+            continue
+        last = (m.get("content") or "").strip()
+        if not last:
+            continue
+        lines = [p.strip() for p in last.splitlines() if p.strip()]
+        if len(lines) > 1:
+            return [p[:240] for p in lines[:max_queries]]
+        return [last[:240]]
+    return []
+

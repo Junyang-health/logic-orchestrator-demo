@@ -832,6 +832,36 @@ export default function X6Canvas(props: {
     applySubtreeSelectionHighlight(g, selectedNodeId);
   }, [selectedNodeId]);
 
+  const canvasCenterOnNodeRequest = useUiStore((s) => s.canvasCenterOnNodeRequest);
+  useEffect(() => {
+    if (!canvasCenterOnNodeRequest) return;
+    const g = graphRef.current as Graph & {
+      centerCell?: (cell: unknown, opts?: { padding?: number }) => void;
+      scrollToCell?: (cell: unknown) => void;
+    };
+    if (!g?.getCellById) return;
+    const cell = g.getCellById(canvasCenterOnNodeRequest.nodeId);
+    if (!cell?.isNode?.()) return;
+    const center = () => {
+      try {
+        if (typeof g.centerCell === "function") {
+          g.centerCell(cell, { padding: 32 });
+        } else if (typeof g.scrollToCell === "function") {
+          g.scrollToCell(cell);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    center();
+    const t = window.setTimeout(center, 80);
+    const t2 = window.setTimeout(center, 260);
+    return () => {
+      window.clearTimeout(t);
+      window.clearTimeout(t2);
+    };
+  }, [canvasCenterOnNodeRequest?.nodeId, canvasCenterOnNodeRequest?.token]);
+
   useEffect(() => {
     const g = graphRef.current;
     if (!g) return;

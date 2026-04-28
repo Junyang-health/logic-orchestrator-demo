@@ -1,9 +1,14 @@
 import type { Graph, Node } from "@antv/x6";
-import { ChevronDown, ChevronRight, MessageCircle, MoveRight, Plus, Trash2 } from "lucide-react";
-import { useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { AlertTriangle, ChevronDown, ChevronRight, FileWarning, MessageCircle, MoveRight, Plus, Trash2 } from "lucide-react";
+import { useLayoutEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/useI18n";
 import { combineGraphs } from "../lib/graphBranch";
 import { addChildToParent, removeNodeFromGraph } from "../lib/mindmapCanvasOps";
+import {
+  getCollisionChips,
+  hasExplicitCollisionMetadata,
+  isMultiFileSourceContext
+} from "../lib/mindmapCollisionChips";
 import { countDescendantNodes } from "../lib/mindmapCollapse";
 import { REVIEW_COMMENT_COUNT_DATA_KEY } from "../lib/syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
@@ -39,8 +44,10 @@ function nodeSurfaceClass(type?: string) {
 }
 
 /** Status rings on top of evidence vs inferred fill. */
-function nodeStatusRing(status?: string) {
-  if (status === "conflict") return "ring-2 ring-rose-200/90 dark:ring-rose-400/60";
+function nodeStatusRing(status?: string, opts?: { hasFactsCollision?: boolean }) {
+  if (status === "conflict")
+    return "ring-2 ring-rose-200/90 dark:ring-rose-400/60";
+  if (opts?.hasFactsCollision) return "ring-2 ring-violet-200/80 dark:ring-violet-400/55";
   if (status === "unstable") return "ring-2 ring-amber-200/80 dark:ring-amber-400/55";
   if (status === "draft") return "ring-1 ring-dashed ring-white/50";
   return "";
@@ -85,8 +92,12 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
   const isNewHighlighted = useUiStore((s) => Boolean(id && s.newMarkedNodeIds[id]));
   const reparentingNodeId = useUiStore((s) => s.reparentingNodeId);
   const startReparent = useUiStore((s) => s.startReparent);
+  const sourceFileCount = useUiStore((s) => s.sourceFiles.length);
+  const projectSelectedFileIdCount = useUiStore((s) => s.projectSelectedFileIds.length);
+  const [collisionOpen, setCollisionOpen] = useState<null | "logic" | "facts">(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const collisionRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
   const subtreeRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -189,9 +200,33 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
     [isSubtreeCollapsed, id, combinedEdges]
   );
 
+  const multiFile = useMemo(
+    () => isMultiFileSourceContext(sourceFileCount, projectSelectedFileIdCount),
+    [sourceFileCount, projectSelectedFileIdCount]
+  );
+  const collisionChips = useMemo(
+    () =>
+      getCollisionChips({
+        status,
+        violation_summary: violationSummary,
+        inferred_consequences: inferredConsequences,
+        upstream_conflict_summary: upstreamConflict,
+        metadata
+      }),
+    [status, violationSummary, inferredConsequences, upstreamConflict, metadata]
+  );
+  const hasLogicCollisionChip = collisionChips.some((c) => c.kind === "logic");
+  const hasFactsCollision = collisionChips.some((c) => c.kind === "facts");
+  const showCollisionRow =
+    collisionChips.length > 0 &&
+    (multiFile ||
+      hasExplicitCollisionMetadata(metadata) ||
+      status === "conflict" ||
+      status === "unstable");
   const showRiskPanel =
-    status === "conflict" ||
-    (status === "unstable" && (violationSummary.length > 0 || inferredConsequences.length > 0));
+    (status === "conflict" ||
+      (status === "unstable" && (violationSummary.length > 0 || inferredConsequences.length > 0))) &&
+    !hasLogicCollisionChip;
 
   useLayoutEffect(() => {
     const n = props.node;
@@ -199,6 +234,7 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
 
     const riskH = riskRef.current?.offsetHeight ?? 0;
     const valuesH = valuesRef.current?.offsetHeight ?? 0;
+    const collisionH = collisionRef.current?.offsetHeight ?? 0;
     const chipsH = chipsRef.current?.offsetHeight ?? 28;
     const subtreeH = subtreeRef.current?.offsetHeight ?? 0;
     const actionsH = actionsRef.current?.offsetHeight ?? 0;
@@ -207,7 +243,7 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
     const verticalPad = 18;
     const nextH = Math.min(
       520,
-      Math.max(96, riskH + valuesH + labelViewport + chipsH + subtreeH + actionsH + verticalPad)
+      Math.max(96, riskH + valuesH + collisionH + labelViewport + chipsH + subtreeH + actionsH + verticalPad)
     );
     const cur = n.getSize();
     if (Math.abs(cur.height - nextH) > 2 || Math.abs(cur.width - NODE_W) > 2) {
@@ -229,7 +265,10 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
     reparentingNodeId,
     hasOutgoingChildren,
     isSubtreeCollapsed,
-    hiddenDescendantCount
+    hiddenDescendantCount,
+    showCollisionRow,
+    collisionOpen,
+    hasFactsCollision
   ]);
 
   return (
@@ -261,7 +300,7 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
       <div
         className={[
           `${nodeSurfaceClass(type)} flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden px-3 py-2.5`,
-          nodeStatusRing(status),
+          nodeStatusRing(status, { hasFactsCollision }),
           reparentingNodeId === id ? "ring-2 ring-amber-200/90 dark:ring-amber-300/70" : ""
         ].join(" ")}
         onClick={(e) => {
@@ -356,6 +395,82 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
         >
           <span className="block whitespace-pre-wrap break-words">{label || t("node_untitled")}</span>
         </div>
+
+        {showCollisionRow ? (
+          <div
+            ref={collisionRef}
+            className="mt-1.5 shrink-0"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex flex-wrap items-center gap-1"
+              title={multiFile ? t("node_collision_multisource_title") : undefined}
+            >
+              {collisionChips.map((c) => {
+                const open = collisionOpen === c.kind;
+                return (
+                  <button
+                    key={c.kind}
+                    type="button"
+                    className={[
+                      "inline-flex max-w-full items-center gap-0.5 rounded-lg border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                      c.kind === "logic"
+                        ? "border-rose-200/50 bg-rose-500/45 text-rose-50"
+                        : "border-violet-200/50 bg-violet-600/50 text-violet-50"
+                    ].join(" ")}
+                    aria-expanded={open}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCollisionOpen((cur) => (cur === c.kind ? null : c.kind));
+                    }}
+                  >
+                    {c.kind === "logic" ? (
+                      <AlertTriangle className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+                    ) : (
+                      <FileWarning className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+                    )}
+                    {c.kind === "logic" ? t("node_collision_chip_logic") : t("node_collision_chip_facts")}
+                  </button>
+                );
+              })}
+            </div>
+            {collisionOpen === "logic" && hasLogicCollisionChip ? (
+              <div className="mt-1 rounded-lg border border-rose-200/40 bg-black/40 px-2 py-1.5 text-[9px] leading-snug text-rose-50">
+                {collisionChips
+                  .filter((x) => x.kind === "logic")
+                  .map((c, i) => (
+                    <p key={i} className="whitespace-pre-wrap break-words">
+                      {c.summary}
+                    </p>
+                  ))}
+                {upstreamConflict && status === "unstable" ? (
+                  <p className="mt-1.5 text-[8.5px] text-rose-100/90">
+                    <span className="font-semibold">{t("node_upstream")} </span>
+                    {upstreamConflict}
+                  </p>
+                ) : null}
+                {inferredConsequences ? (
+                  <>
+                    <p className="mt-1.5 font-semibold text-rose-100">{t("node_inferred_consequences")}</p>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-rose-100/90">{inferredConsequences}</p>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            {collisionOpen === "facts" ? (
+              <div className="mt-1 rounded-lg border border-violet-200/40 bg-black/40 px-2 py-1.5 text-[9px] leading-snug text-violet-50">
+                {collisionChips
+                  .filter((x) => x.kind === "facts")
+                  .map((c, i) => (
+                    <p key={i} className="whitespace-pre-wrap break-words">
+                      {c.summary}
+                    </p>
+                  ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div
           ref={chipsRef}

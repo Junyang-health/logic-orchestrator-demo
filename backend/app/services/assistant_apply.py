@@ -5,7 +5,11 @@ from typing import Any
 
 from app.services.llm_client import LlmClient
 from app.services.review_apply import collect_branch_node_ids, merge_review_patch
-from app.services.tavily_search import format_results_for_prompt, tavily_search
+from app.services.tavily_search import (
+    format_multi_queries_for_prompt,
+    resolve_assistant_search_queries,
+    tavily_search,
+)
 
 ASSISTANT_APPLY_SYSTEM = """You update a mindmap subtree based on a user–assistant conversation and optional skill instructions. Return JSON only. No markdown.
 
@@ -153,10 +157,10 @@ If a section "Project source material" appears, it is extracted text from the us
 Reply in clear, concise prose. You may propose concrete edits, but the user applies them via a separate action.
 When suggesting structural changes, mention node ids from the snapshot when possible.
 
-If a section titled "Tavily web search results" is present in the user prompt:
-- You MUST include a final "Sources:" section in your reply with 1-5 bullet lines.
+If a section titled "Tavily web search results" is present in the user prompt (possibly grouped by **Query:** lines):
+- You MUST include a final "Sources:" section in your reply with bullet lines (one URL per key source).
 - Each bullet MUST contain a URL exactly as shown in the results.
-- If the results section says "(search failed: ...)", you MUST explicitly say web search failed and include the reason.
+- If the results section says "(search failed: ...)" for a part of the run, you MUST say which query failed and why.
 
 Return JSON only. No markdown.
 Schema: { "reply": "string" }
@@ -299,29 +303,34 @@ def run_assistant_chat(
         source_context=source_context,
     )
     if builtin_skills.get("webSearch"):
-        q = (web_search_query or "").strip()
-        if not q:
-            # Fallback query: latest user message.
-            last_user = ""
-            for m in reversed(messages):
-                if (m.get("role") or "").strip().lower() == "user":
-                    last_user = (m.get("content") or "").strip()
-                    if last_user:
-                        break
-            q = last_user
-        try:
-            results = tavily_search(query=q[:240], max_results=5)
+        queries = resolve_assistant_search_queries(web_search_query, messages, max_queries=10)
+        if not queries:
             user_prompt = "\n".join(
                 [
                     user_prompt,
                     "",
-                    "Tavily web search results (top 5):",
-                    format_results_for_prompt(results),
+                    "Tavily web search results:",
+                    "(search skipped: no query — add lines in the web search field or a user message.)",
                 ]
             )
-        except Exception as e:
-            # Don't fail chat if search is not configured or temporarily down.
-            user_prompt = "\n".join([user_prompt, "", "Tavily web search results:", f"(search failed: {e})"])
+        else:
+            sections: list[tuple[str, list]] = []
+            per_q = 4 if len(queries) > 1 else 5
+            for q in queries:
+                try:
+                    res = tavily_search(query=q, max_results=per_q)
+                    sections.append((q, res))
+                except Exception as e:
+                    sections.append((f"{q} (Tavily error: {e})", []))
+            block = format_multi_queries_for_prompt(sections)
+            user_prompt = "\n".join(
+                [
+                    user_prompt,
+                    "",
+                    "Tavily web search results (one or more queries; duplicate URLs may be marked):",
+                    block if block != "(no results)" else "(no results for any query)",
+                ]
+            )
     data = llm.generate_json(system=CHAT_SYSTEM, user=user_prompt)
     if not isinstance(data, dict):
         raise ValueError("LLM did not return a JSON object")

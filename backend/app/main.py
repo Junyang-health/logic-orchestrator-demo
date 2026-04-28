@@ -7,6 +7,7 @@ from app.routers.review import router as review_router
 from app.routers.models import router as models_router
 from app.routers.projects import router as projects_router
 from app.routers.assistant import router as assistant_router
+from app.routers.word_export import router as word_export_router
 
 app = FastAPI(title="backend")
 
@@ -39,4 +40,5 @@ app.include_router(review_router)
 app.include_router(models_router)
 app.include_router(projects_router)
 app.include_router(assistant_router)
+app.include_router(word_export_router)
 

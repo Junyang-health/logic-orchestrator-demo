@@ -48,7 +48,7 @@ function AssistantTranscriptBlockInner(props: AssistantTranscriptBlockProps) {
       </div>
       <div
         ref={listRef}
-        className="min-h-[12rem] max-h-[min(52vh,560px)] space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/60"
+        className="min-h-[8rem] max-h-[min(40dvh,360px)] space-y-2 overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/60"
       >
         {isRoundtable ? (
           <>

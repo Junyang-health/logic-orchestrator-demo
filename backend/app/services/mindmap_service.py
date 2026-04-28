@@ -46,6 +46,12 @@ Hard requirements:
     "critical_values": [ {"label": "short field name", "value": "verbatim or tightly paraphrased value from the material"} ]
   Use at most 6 entries per node; use an empty array [] when no such values apply to that node.
   Never invent numbers or citations; values MUST be traceable to the provided summaries or evidence lines.
+- When **more than one** file or summary is provided and the material exposes:
+  - **Logic tension** (contradictory conclusions, incompatible claims), set on the affected Inferred node:
+    "metadata": { "collision_logic": "one short sentence naming the tension" }
+  - **Factual inconsistency** across sources (different numbers, dates, or facts for the same point), set on the best Inferred node that synthesizes that point:
+    "metadata": { "collision_facts": "one short sentence naming the factual mismatch" }
+  Use at most one of these per node when needed; omit both when sources align.
 """
 
 

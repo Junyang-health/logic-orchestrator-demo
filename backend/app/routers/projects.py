@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.services import project_storage
+from app.services import project_storage, web_ingest
 from app.services.llm_client import LlmClient
 from app.services.mindmap_builder import InputFile, build_mindmap_from_files, build_mindmap_from_intent_only
 
@@ -31,6 +31,8 @@ class StoredFileDto(BaseModel):
     content_type: Optional[str] = None
     size: int
     uploaded_at_ms: int
+    """user_upload | llm_ingest (web/assistant pipeline)."""
+    origin: str = "user_upload"
     has_extracted_text: bool = False
     extracted_at_ms: Optional[int] = None
     extract_error: Optional[str] = None
@@ -50,6 +52,14 @@ class SavedMindmapCanvasBody(BaseModel):
     mindmap: dict[str, Any]
 
 
+class IngestWebBody(BaseModel):
+    """Tavily search (one or more query strings) and store fetched page bodies as project files."""
+
+    queries: list[str] = Field(..., min_length=1, max_length=20, description="Each item is a separate Tavily query.")
+    max_results_per_query: int = Field(default=3, ge=1, le=10)
+    max_pages_ingest: int = Field(default=15, ge=1, le=30)
+
+
 @router.get("", response_model=list[ProjectDto])
 def list_projects():
     return [ProjectDto(id=p.id, name=p.name, created_at_ms=p.created_at_ms) for p in project_storage.list_projects()]
@@ -59,6 +69,17 @@ def list_projects():
 def create_project(body: CreateProjectBody):
     p = project_storage.ensure_project(name=body.name, project_id=body.project_id)
     return ProjectDto(id=p.id, name=p.name, created_at_ms=p.created_at_ms)
+
+
+@router.delete("/{project_id}")
+def delete_project(project_id: str):
+    try:
+        project_storage.delete_project(project_id=project_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
 
 
 @router.get("/{project_id}/files", response_model=list[StoredFileDto])
@@ -71,6 +92,7 @@ def list_project_files(project_id: str):
             content_type=f.content_type,
             size=f.size,
             uploaded_at_ms=f.uploaded_at_ms,
+            origin=f.origin,
             has_extracted_text=bool(f.extracted_relpath),
             extracted_at_ms=f.extracted_at_ms,
             extract_error=f.extract_error,
@@ -101,6 +123,27 @@ def delete_project_file(project_id: str, file_id: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     return {"ok": True}
+
+
+@router.post("/{project_id}/files/ingest-web")
+def project_ingest_web(project_id: str, body: IngestWebBody = Body(...)) -> dict[str, Any]:
+    """Run one Tavily search per `queries` item, then fetch and store up to `max_pages_ingest` unique URLs as project files."""
+    if not project_storage.project_exists(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    out = web_ingest.ingest_tavily_urls_to_project(
+        project_id=project_id,
+        queries=body.queries,
+        max_results_per_query=body.max_results_per_query,
+        max_pages_ingest=body.max_pages_ingest,
+    )
+    if not out.get("ok"):
+        raise HTTPException(status_code=400, detail=out.get("error") or "Ingest failed")
+    return {
+        "stored": out.get("stored") or [],
+        "notices": out.get("notices") or [],
+        "queries_run": out.get("queries_run") or [],
+        "urls_considered": int(out.get("urls_considered") or 0),
+    }
 
 
 @router.get("/{project_id}/files/{file_id}/extracted")

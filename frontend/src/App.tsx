@@ -1,6 +1,7 @@
 import type { Graph } from "@antv/x6";
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import ProjectLandingOverlay from "./components/ProjectLandingOverlay";
 import X6Canvas from "./components/X6Canvas";
 import AssistantOverlay from "./components/AssistantOverlay";
 import AssistantAndCanvasRow from "./components/rightDock/AssistantAndCanvasRow";
@@ -36,6 +37,16 @@ export default function App() {
   const backendBase = getBackendBase();
 
   useEffect(() => {
+    try {
+      if (typeof localStorage !== "undefined" && localStorage.getItem("mindmap_landing_done") !== "1") {
+        useUiStore.getState().openProjectLanding("first_visit");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
     if (!graph || !reparentingNodeId) return;
     if (!selectedNodeId || selectedNodeId === reparentingNodeId) return;
     reparentNodeOnGraph(graph, reparentingNodeId, selectedNodeId, reparentingRelation);
@@ -54,6 +65,7 @@ export default function App() {
   return (
     <div className="relative h-screen w-screen overflow-hidden text-slate-900 dark:text-slate-100">
       <ThemeDocumentSync />
+      <ProjectLandingOverlay backendBase={backendBase} />
       <ClosedDockRevealTabs />
 
       {reparentingNodeId ? (

@@ -12,6 +12,7 @@ import {
 } from "../../lib/mindmapTreeRows";
 import { downloadTextFile } from "../../lib/fileDownload";
 import PptFrameworkExportPanel from "./PptFrameworkExportPanel";
+import WordReportExportPanel from "./WordReportExportPanel";
 import "@antv/x6-plugin-export/lib/api";
 
 function downloadDataUri(filename: string, dataUri: string) {
@@ -78,7 +79,7 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
   const allIds = useMemo(() => combined.nodes.map((n) => n.id), [combined.nodes]);
 
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
-  const [exportTab, setExportTab] = useState<"mindmap" | "ppt">("mindmap");
+  const [exportTab, setExportTab] = useState<"mindmap" | "ppt" | "word">("mindmap");
   const [format, setFormat] = useState<"markdown" | "jpeg">("markdown");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -202,11 +203,11 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
     <div className="space-y-4 text-sm text-slate-800 dark:text-slate-100">
       <div>
         <div className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("export_title")}</div>
-        <div className="mt-2 ios-segment w-full">
+        <div className="mt-2 ios-segment w-full flex-wrap">
           <button
             type="button"
             className={[
-              "ios-segment-item flex-1 text-[11px]",
+              "ios-segment-item flex-1 text-[11px] min-w-[5.5rem]",
               exportTab === "mindmap" ? "ios-segment-item-active" : "ios-segment-item-inactive"
             ].join(" ")}
             onClick={() => {
@@ -219,7 +220,7 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
           <button
             type="button"
             className={[
-              "ios-segment-item flex-1 text-[11px]",
+              "ios-segment-item flex-1 text-[11px] min-w-[5.5rem]",
               exportTab === "ppt" ? "ios-segment-item-active" : "ios-segment-item-inactive"
             ].join(" ")}
             onClick={() => {
@@ -229,11 +230,26 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
           >
             {t("export_tab_ppt")}
           </button>
+          <button
+            type="button"
+            className={[
+              "ios-segment-item flex-1 text-[11px] min-w-[5.5rem]",
+              exportTab === "word" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+            ].join(" ")}
+            onClick={() => {
+              setError("");
+              setExportTab("word");
+            }}
+          >
+            {t("export_tab_word")}
+          </button>
         </div>
         {exportTab === "mindmap" ? (
           <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_intro")}</p>
-        ) : (
+        ) : exportTab === "ppt" ? (
           <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_ppt_subtitle")}</p>
+        ) : (
+          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_word_subtitle")}</p>
         )}
       </div>
 
@@ -362,6 +378,10 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
           combined={combined}
           selectedList={selectedList}
         />
+      ) : null}
+
+      {exportTab === "word" ? (
+        <WordReportExportPanel backendBase={backendBase} combined={combined} selectedList={selectedList} />
       ) : null}
     </div>
   );
