@@ -101,6 +101,34 @@ def list_project_files(project_id: str):
     ]
 
 
+class CounselMinutesBody(BaseModel):
+    slug_keywords: str = Field(..., min_length=1, max_length=200)
+    markdown: str = Field(..., min_length=1, max_length=500_000)
+
+
+@router.post("/{project_id}/counsel-minutes", response_model=StoredFileDto)
+def store_counsel_minutes(project_id: str, body: CounselMinutesBody):
+    try:
+        meta = project_storage.store_counsel_minutes(
+            project_id=project_id,
+            slug_keywords=body.slug_keywords.strip(),
+            markdown=body.markdown,
+        )
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return StoredFileDto(
+        id=meta.id,
+        filename=meta.filename,
+        content_type=meta.content_type,
+        size=meta.size,
+        uploaded_at_ms=meta.uploaded_at_ms,
+        origin=meta.origin,
+        has_extracted_text=bool(meta.extracted_relpath),
+        extracted_at_ms=meta.extracted_at_ms,
+        extract_error=meta.extract_error,
+    )
+
+
 @router.get("/{project_id}/files/{file_id}")
 def download_project_file(project_id: str, file_id: str):
     try:

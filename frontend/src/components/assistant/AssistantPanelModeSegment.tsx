@@ -9,6 +9,7 @@ type Props = {
     blackSwan: string;
     mece: string;
     roundtable: string;
+    counsel: string;
   };
 };
 
@@ -22,7 +23,8 @@ export default function AssistantPanelModeSegment({ mode, onModeChange, labels }
             ["optimism", labels.optimism] as const,
             ["blackSwan", labels.blackSwan] as const,
             ["mece", labels.mece] as const,
-            ["roundtable", labels.roundtable] as const
+            ["roundtable", labels.roundtable] as const,
+            ["counsel", labels.counsel] as const
           ] as const
         ).map(([key, label]) => (
           <button

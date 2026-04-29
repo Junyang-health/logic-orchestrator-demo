@@ -62,7 +62,7 @@ export default function AssistantSessionSourcesCard({
   onSelectedSourceFileIdsChange
 }: Props) {
   return (
-    <div className="mb-3 ios-card p-2">
+    <div className="ios-card p-2">
       <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{sessionLabel}</div>
       <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-200">
         {targetNodeLabel} <span className="font-mono">{selectedNodeId ?? "—"}</span>

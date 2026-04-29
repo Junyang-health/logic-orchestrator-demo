@@ -347,6 +347,34 @@ def refresh_file_extraction(*, project_id: str, file_id: str) -> StoredFile | No
     return new
 
 
+def _slugify_counsel_keywords(keywords: str) -> str:
+    s = (keywords or "session").strip().lower()
+    s = re.sub(r"[^\w\-.]+", "_", s, flags=re.UNICODE)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return (s or "session")[:80]
+
+
+def store_counsel_minutes(
+    *,
+    project_id: str,
+    slug_keywords: str,
+    markdown: str,
+) -> StoredFile:
+    """Store counsel minutes as Markdown; if filename collides, append milliseconds."""
+    base = _slugify_counsel_keywords(slug_keywords)
+    fname = f"counsel_{base}.md"
+    existing = list_files(project_id)
+    if any(f.filename == fname for f in existing):
+        fname = f"counsel_{base}_{_now_ms()}.md"
+    return store_file(
+        project_id=project_id,
+        filename=fname,
+        content_type="text/markdown",
+        content=markdown.encode("utf-8"),
+        origin="llm_ingest",
+    )
+
+
 def resolve_file_path(*, project_id: str, file_id: str) -> tuple[StoredFile, Path]:
     files = list_files(project_id)
     for f in files:

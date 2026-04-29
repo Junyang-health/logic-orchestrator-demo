@@ -118,6 +118,8 @@ export default function AssistantPanelSimulationStack({
   onRemoveRtPersona,
   onAddRtCustom
 }: Props) {
+  if (mode === "counsel") return null;
+
   if (mode === "chat" && !simReport) return null;
 
   return (

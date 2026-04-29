@@ -13,10 +13,12 @@ import {
 import type { MindmapJson } from "../types/mindmap";
 import AssistantSkillsBlock from "./assistant/AssistantSkillsBlock";
 import AssistantTranscriptBlock from "./assistant/AssistantTranscriptBlock";
-import AssistantPanelFooter from "./assistant/AssistantPanelFooter";
+import AssistantPanelLeftActions from "./assistant/AssistantPanelLeftActions";
+import AssistantPanelRightComposer from "./assistant/AssistantPanelRightComposer";
 import AssistantPanelHeader from "./assistant/AssistantPanelHeader";
 import AssistantPanelModeSegment from "./assistant/AssistantPanelModeSegment";
 import AssistantPanelSimulationStack from "./assistant/AssistantPanelSimulationStack";
+import AssistantCounselFlow from "./assistant/AssistantCounselFlow";
 import AssistantSandboxDraftBanner from "./assistant/AssistantSandboxDraftBanner";
 import AssistantSessionSourcesCard from "./assistant/AssistantSessionSourcesCard";
 import type { AssistantPanelMode } from "./assistant/assistantPanelMode";
@@ -557,7 +559,7 @@ export default function AssistantPanel() {
   const runSendChat = useCallback(async () => {
     const raw = draft.trim();
     if (raw) {
-      const m = raw.match(/^\s*\/(chat|optimism|blackswan|black-swan|mece|roundtable)\s*$/i);
+      const m = raw.match(/^\s*\/(chat|optimism|blackswan|black-swan|mece|roundtable|counsel)\s*$/i);
       if (m) {
         const g = m[1].toLowerCase().replace("black-swan", "blackswan");
         const nextMode: AssistantPanelMode =
@@ -569,7 +571,9 @@ export default function AssistantPanel() {
                 ? "blackSwan"
                 : g === "mece"
                   ? "mece"
-                  : "roundtable";
+                  : g === "counsel"
+                    ? "counsel"
+                    : "roundtable";
         setMode(nextMode);
         setDraft("");
         return;
@@ -582,170 +586,210 @@ export default function AssistantPanel() {
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/95">
       <AssistantPanelHeader title={t("assistant_title")} closeLabel={t("assistant_close_session")} onClose={deactivateAssistant} />
 
-      <AssistantPanelModeSegment
-        mode={mode}
-        onModeChange={setMode}
-        labels={{
-          chat: t("mode_chat"),
-          optimism: t("mode_optimism"),
-          blackSwan: t("mode_black_swan"),
-          mece: t("mode_mece"),
-          roundtable: t("mode_roundtable")
-        }}
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+        {/* Left ~70%: mode, transcript + simulations, primary actions */}
+        <div className="flex min-h-0 min-w-0 w-[70%] flex-shrink-0 flex-col border-r border-slate-200 dark:border-slate-800">
+          <AssistantPanelModeSegment
+            mode={mode}
+            onModeChange={setMode}
+            labels={{
+              chat: t("mode_chat"),
+              optimism: t("mode_optimism"),
+              blackSwan: t("mode_black_swan"),
+              mece: t("mode_mece"),
+              roundtable: t("mode_roundtable"),
+              counsel: t("mode_counsel")
+            }}
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
+            {sandboxHasDrafts ? (
+              <AssistantSandboxDraftBanner
+                line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
+                discardLabel={t("assistant_discard_draft")}
+                onDiscard={discardDraft}
+              />
+            ) : null}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-[1_1_50%] overflow-y-auto overflow-x-hidden border-b border-slate-200 p-2 dark:border-slate-800">
-          <AssistantSessionSourcesCard
-            sessionLabel={t("assistant_session")}
-            targetNodeLabel={t("assistant_target_node")}
+            {mode === "counsel" ? (
+              <AssistantCounselFlow
+                backendBase={backendBase}
+                projectId={activeProjectId}
+                selectedNodeId={selectedNode?.id}
+                mainGraph={mainGraph}
+                sandboxGraph={sandboxGraph}
+                sourceFileIds={selectedSourceFileIds}
+                payloadSkills={payloadSkills}
+                builtinSkills={builtinPayload}
+                sandboxMode={sandboxMode}
+                loadMainGraph={loadMainGraph}
+                rtLib={rtLib}
+                onPersistPersonaToLib={(name, instruction) => {
+                  setRtLib((prev) => {
+                    if (prev.some((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase())) return prev;
+                    return [...prev, { name: name.trim().slice(0, 120), instruction: instruction.trim().slice(0, 4000) }];
+                  });
+                }}
+              />
+            ) : (
+              <>
+                <AssistantTranscriptBlock
+                  listRef={listRef}
+                  isRoundtable={mode === "roundtable"}
+                  messages={messages}
+                  chatBusy={chatBusy}
+                  rtTranscript={rtTranscript}
+                  rtRoundBusy={rtRoundBusy}
+                  rtProposal={rtProposal}
+                  onClearChat={clearChat}
+                  onClearRoundtable={clearRtTranscript}
+                />
+
+                <AssistantPanelSimulationStack
+                  mode={mode}
+                  simReport={simReport}
+                  simReportTitle={t("assistant_sim_report")}
+                  branchFinancial={branchFinancial}
+                  optimismMetricsAvailable={optimismMetricsAvailable}
+                  optimismFocus={optimismFocus}
+                  setOptimismFocus={setOptimismFocus}
+                  currency={currency}
+                  setCurrency={setCurrency}
+                  optimismDeltaPct={optimismDeltaPct}
+                  setOptimismDeltaPct={setOptimismDeltaPct}
+                  optimismPreview={optimismPreview}
+                  optimismAffected={optimismAffected}
+                  simBusy={simBusy}
+                  onApplyOptimism={runOptimismSimulation}
+                  selectedNodeId={selectedNode?.id}
+                  bsScenarios={bsScenarios}
+                  bsSelectedScenarioIds={bsSelectedScenarioIds}
+                  onToggleScenario={handleBsToggleScenario}
+                  bsRunBundle={bsRunBundle}
+                  bsMitigationPick={bsMitigationPick}
+                  onToggleMitigation={handleBsToggleMitigation}
+                  onBlackSwanScan={blackSwanScan}
+                  onBlackSwanRun={blackSwanRun}
+                  onBlackSwanApply={blackSwanApply}
+                  meceScanBundle={meceScanBundle}
+                  meceSelectedMods={meceSelectedMods}
+                  onToggleMeceModification={handleMeceToggleModification}
+                  meceEvidenceBundle={meceEvidenceBundle}
+                  meceWebHints={meceWebHints}
+                  meceWebBusyId={meceWebBusyId}
+                  onMeceScan={meceScan}
+                  onMeceEvidence={meceEvidence}
+                  onMeceWebSearchForMod={meceWebSearchForMod}
+                  onMeceApply={meceApply}
+                  rtPersonas={rtPersonas}
+                  rtLib={rtLib}
+                  rtNewName={rtNewName}
+                  setRtNewName={setRtNewName}
+                  rtNewInstruction={rtNewInstruction}
+                  setRtNewInstruction={setRtNewInstruction}
+                  onAddRtPreset={addRtPreset}
+                  onAddFromLib={addRtFromLib}
+                  onRemoveRtPersona={removeRtPersona}
+                  onAddRtCustom={addRtCustom}
+                />
+              </>
+            )}
+          </div>
+
+          {mode === "counsel" ? null : (
+          <AssistantPanelLeftActions
+            error={error}
+            mode={mode}
             selectedNodeId={selectedNode?.id}
-            sandboxHint={t("assistant_sandbox_hint")}
-            skillsWebSearch={skills.webSearch}
-            webQueryLabel={t("assistant_web_query")}
-            webQueryHelp={t("assistant_web_query_help")}
-            webQueryPlaceholder={t("assistant_web_query_ph")}
-            webSearchQuery={webSearchQuery}
-            onWebSearchQueryChange={setWebSearchQuery}
-            activeProjectId={activeProjectId}
-            ingestBusy={ingestWebBusy}
-            ingestCta={t("assistant_web_ingest_cta")}
-            ingestBusyLabel={t("assistant_web_ingest_busy")}
-            ingestHint={t("assistant_web_ingest_hint")}
-            onIngestWeb={ingestWebToSources}
-            sourceFilesLabel={t("assistant_source_files")}
-            sourceFilesHint={t("assistant_source_files_hint")}
-            sourceFilesNoProject={t("assistant_source_files_no_project")}
-            sourceFilesError={t("assistant_source_files_error")}
-            sourceFilesEmpty={t("assistant_source_files_empty")}
-            selectAllSources={t("assistant_select_all_sources")}
-            selectNoSources={t("assistant_select_no_sources")}
-            selectionCount={(n) => t("assistant_source_files_selection_count", { n })}
-            projectFilesLoadError={projectFilesLoadError}
-            projectFiles={projectFiles}
-            selectedSourceFileIds={selectedSourceFileIds}
-            onSelectedSourceFileIdsChange={setSelectedSourceFileIds}
-          />
-          {sandboxHasDrafts ? (
-            <AssistantSandboxDraftBanner
-              line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
-              discardLabel={t("assistant_discard_draft")}
-              onDiscard={discardDraft}
-            />
-          ) : null}
-
-          <AssistantTranscriptBlock
-            listRef={listRef}
-            isRoundtable={mode === "roundtable"}
-            messages={messages}
-            chatBusy={chatBusy}
-            rtTranscript={rtTranscript}
             rtRoundBusy={rtRoundBusy}
-            rtProposal={rtProposal}
-            onClearChat={clearChat}
-            onClearRoundtable={clearRtTranscript}
+            rtPersonasCount={rtPersonas.length}
+            onRunRoundtableRound={runRoundtableRound}
+            rtProposeBusy={rtProposeBusy}
+            rtTranscriptCount={rtTranscript.length}
+            onProposeRoundtable={proposeRoundtable}
+            hasRoundtableProposal={Boolean(rtProposal)}
+            rtConfirmApply={rtConfirmApply}
+            onRtConfirmApplyChange={setRtConfirmApply}
+            rtApplyBusy={rtApplyBusy}
+            onApplyRoundtablePatch={applyRoundtablePatch}
+            applyBusy={applyBusy}
+            messagesCount={messages.length}
+            onApplyToMindmap={applyToMindmap}
           />
+          )}
         </div>
 
-        <AssistantPanelSimulationStack
-          mode={mode}
-          simReport={simReport}
-          simReportTitle={t("assistant_sim_report")}
-          branchFinancial={branchFinancial}
-          optimismMetricsAvailable={optimismMetricsAvailable}
-          optimismFocus={optimismFocus}
-          setOptimismFocus={setOptimismFocus}
-          currency={currency}
-          setCurrency={setCurrency}
-          optimismDeltaPct={optimismDeltaPct}
-          setOptimismDeltaPct={setOptimismDeltaPct}
-          optimismPreview={optimismPreview}
-          optimismAffected={optimismAffected}
-          simBusy={simBusy}
-          onApplyOptimism={runOptimismSimulation}
-          selectedNodeId={selectedNode?.id}
-          bsScenarios={bsScenarios}
-          bsSelectedScenarioIds={bsSelectedScenarioIds}
-          onToggleScenario={handleBsToggleScenario}
-          bsRunBundle={bsRunBundle}
-          bsMitigationPick={bsMitigationPick}
-          onToggleMitigation={handleBsToggleMitigation}
-          onBlackSwanScan={blackSwanScan}
-          onBlackSwanRun={blackSwanRun}
-          onBlackSwanApply={blackSwanApply}
-          meceScanBundle={meceScanBundle}
-          meceSelectedMods={meceSelectedMods}
-          onToggleMeceModification={handleMeceToggleModification}
-          meceEvidenceBundle={meceEvidenceBundle}
-          meceWebHints={meceWebHints}
-          meceWebBusyId={meceWebBusyId}
-          onMeceScan={meceScan}
-          onMeceEvidence={meceEvidence}
-          onMeceWebSearchForMod={meceWebSearchForMod}
-          onMeceApply={meceApply}
-          rtPersonas={rtPersonas}
-          rtLib={rtLib}
-          rtNewName={rtNewName}
-          setRtNewName={setRtNewName}
-          rtNewInstruction={rtNewInstruction}
-          setRtNewInstruction={setRtNewInstruction}
-          onAddRtPreset={addRtPreset}
-          onAddFromLib={addRtFromLib}
-          onRemoveRtPersona={removeRtPersona}
-          onAddRtCustom={addRtCustom}
-        />
-
-        <AssistantPanelFooter
-          error={error}
-          mode={mode}
-          selectedNodeId={selectedNode?.id}
-          rtSteering={rtSteering}
-          onRtSteeringChange={setRtSteering}
-          rtRoundBusy={rtRoundBusy}
-          rtPersonasCount={rtPersonas.length}
-          onRunRoundtableRound={runRoundtableRound}
-          rtProposeBusy={rtProposeBusy}
-          rtTranscriptCount={rtTranscript.length}
-          onProposeRoundtable={proposeRoundtable}
-          hasRoundtableProposal={Boolean(rtProposal)}
-          rtConfirmApply={rtConfirmApply}
-          onRtConfirmApplyChange={setRtConfirmApply}
-          rtApplyBusy={rtApplyBusy}
-          onApplyRoundtablePatch={applyRoundtablePatch}
-          applyBusy={applyBusy}
-          draft={draft}
-          onDraftChange={setDraft}
-          chatBusy={chatBusy}
-          onSendChat={runSendChat}
-          messagesCount={messages.length}
-          onApplyToMindmap={applyToMindmap}
-        >
-          <AssistantSkillsBlock
-            builtinWebSearch={skills.webSearch}
-            builtinFinancialAnalyst={skills.financialAnalyst}
-            onToggleBuiltinSkill={toggleSkill}
-            customSkills={customSkills}
-            skillDetailsOpen={skillDetailsOpen}
-            onToggleSkillDetails={toggleSkillDetails}
-            onToggleCustomSkill={toggleCustom}
-            onUpdateSkillName={updateSkillName}
-            onUpdateSkillInstruction={updateSkillInstruction}
-            onRemoveSkill={removeSkill}
-            skillImportUrl={skillImportUrl}
-            onSkillImportUrlChange={(value) => {
-              setSkillImportUrl(value);
-              if (skillImportMessage) setSkillImportMessage("");
-            }}
-            skillImportBusy={skillImportBusy}
-            skillImportMessage={skillImportMessage}
-            onFetchSkillFromUrl={fetchSkillFromUrl}
-            newSkillName={newSkillName}
-            onNewSkillNameChange={setNewSkillName}
-            newSkillBody={newSkillBody}
-            onNewSkillBodyChange={setNewSkillBody}
-            onAddSkill={addSkill}
+        {/* Right ~30%: sources, skills, composer */}
+        <div className="flex min-h-0 min-w-0 w-[30%] flex-shrink-0 flex-col">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden p-2">
+            <AssistantSessionSourcesCard
+              sessionLabel={t("assistant_session")}
+              targetNodeLabel={t("assistant_target_node")}
+              selectedNodeId={selectedNode?.id}
+              sandboxHint={t("assistant_sandbox_hint")}
+              skillsWebSearch={skills.webSearch}
+              webQueryLabel={t("assistant_web_query")}
+              webQueryHelp={t("assistant_web_query_help")}
+              webQueryPlaceholder={t("assistant_web_query_ph")}
+              webSearchQuery={webSearchQuery}
+              onWebSearchQueryChange={setWebSearchQuery}
+              activeProjectId={activeProjectId}
+              ingestBusy={ingestWebBusy}
+              ingestCta={t("assistant_web_ingest_cta")}
+              ingestBusyLabel={t("assistant_web_ingest_busy")}
+              ingestHint={t("assistant_web_ingest_hint")}
+              onIngestWeb={ingestWebToSources}
+              sourceFilesLabel={t("assistant_source_files")}
+              sourceFilesHint={t("assistant_source_files_hint")}
+              sourceFilesNoProject={t("assistant_source_files_no_project")}
+              sourceFilesError={t("assistant_source_files_error")}
+              sourceFilesEmpty={t("assistant_source_files_empty")}
+              selectAllSources={t("assistant_select_all_sources")}
+              selectNoSources={t("assistant_select_no_sources")}
+              selectionCount={(n) => t("assistant_source_files_selection_count", { n })}
+              projectFilesLoadError={projectFilesLoadError}
+              projectFiles={projectFiles}
+              selectedSourceFileIds={selectedSourceFileIds}
+              onSelectedSourceFileIdsChange={setSelectedSourceFileIds}
+            />
+            <AssistantSkillsBlock
+              builtinWebSearch={skills.webSearch}
+              builtinFinancialAnalyst={skills.financialAnalyst}
+              onToggleBuiltinSkill={toggleSkill}
+              customSkills={customSkills}
+              skillDetailsOpen={skillDetailsOpen}
+              onToggleSkillDetails={toggleSkillDetails}
+              onToggleCustomSkill={toggleCustom}
+              onUpdateSkillName={updateSkillName}
+              onUpdateSkillInstruction={updateSkillInstruction}
+              onRemoveSkill={removeSkill}
+              skillImportUrl={skillImportUrl}
+              onSkillImportUrlChange={(value) => {
+                setSkillImportUrl(value);
+                if (skillImportMessage) setSkillImportMessage("");
+              }}
+              skillImportBusy={skillImportBusy}
+              skillImportMessage={skillImportMessage}
+              onFetchSkillFromUrl={fetchSkillFromUrl}
+              newSkillName={newSkillName}
+              onNewSkillNameChange={setNewSkillName}
+              newSkillBody={newSkillBody}
+              onNewSkillBodyChange={setNewSkillBody}
+              onAddSkill={addSkill}
+            />
+          </div>
+          {mode === "counsel" ? null : (
+          <AssistantPanelRightComposer
+            mode={mode}
+            rtSteering={rtSteering}
+            onRtSteeringChange={setRtSteering}
+            rtRoundBusy={rtRoundBusy}
+            draft={draft}
+            onDraftChange={setDraft}
+            chatBusy={chatBusy}
+            onSendChat={runSendChat}
           />
-        </AssistantPanelFooter>
+          )}
+        </div>
       </div>
     </div>
   );
