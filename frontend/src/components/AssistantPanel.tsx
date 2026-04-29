@@ -629,6 +629,24 @@ export default function AssistantPanel() {
                     return [...prev, { name: name.trim().slice(0, 120), instruction: instruction.trim().slice(0, 4000) }];
                   });
                 }}
+                onUpdatePersonaInLib={(name, instruction) => {
+                  setRtLib((prev) => {
+                    const i = prev.findIndex(
+                      (x) => x.name.trim().toLowerCase() === name.trim().toLowerCase()
+                    );
+                    if (i < 0) return prev;
+                    const next = [...prev];
+                    next[i] = {
+                      ...next[i],
+                      instruction: instruction.trim().slice(0, 8000)
+                    };
+                    return next;
+                  });
+                }}
+                onRemovePersonaFromLib={(name) => {
+                  const key = name.trim().toLowerCase();
+                  setRtLib((prev) => prev.filter((x) => x.name.trim().toLowerCase() !== key));
+                }}
               />
             ) : (
               <>

@@ -61,6 +61,22 @@ export async function counselCollisions(
   return raw as { areas: Json[] };
 }
 
+export async function counselPublicFigureInstruction(
+  backendBase: string,
+  personName: string
+): Promise<{ instruction: string }> {
+  const res = await fetch(`${backendBase}/assistant/counsel/public-figure-instruction`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ person_name: personName.trim() })
+  });
+  const raw = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof raw.detail === "string" ? raw.detail : `public-figure ${res.status}`);
+  }
+  return raw as { instruction: string };
+}
+
 export async function counselDebateStep(backendBase: string, body: Json): Promise<{
   next_speaker: string;
   utterance: string;

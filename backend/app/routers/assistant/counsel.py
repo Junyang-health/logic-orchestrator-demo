@@ -148,6 +148,29 @@ def counsel_ngt_opinion_api(body: CounselNgtBody) -> CounselNgtResponse:
     return CounselNgtResponse(opinion=str(out["opinion"]))
 
 
+class CounselPublicFigureBody(BaseModel):
+    person_name: str = Field(..., min_length=1, max_length=160)
+
+
+class CounselPublicFigureResponse(BaseModel):
+    instruction: str
+
+
+@router.post("/assistant/counsel/public-figure-instruction", response_model=CounselPublicFigureResponse)
+def counsel_public_figure_instruction_api(body: CounselPublicFigureBody) -> CounselPublicFigureResponse:
+    try:
+        llm = llm_assistant_chat()
+        out = assistant_counsel.counsel_public_figure_instruction(
+            llm=llm,
+            person_name=body.person_name.strip(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Public figure persona failed: {e}") from e
+    return CounselPublicFigureResponse(instruction=str(out["instruction"]))
+
+
 class CounselCollisionsBody(BaseModel):
     problem_summary: str = Field(..., min_length=1, max_length=16000)
     personas: List[CounselPersonaIn] = Field(..., min_length=4, max_length=8)

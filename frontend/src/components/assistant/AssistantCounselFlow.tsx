@@ -8,6 +8,7 @@ import {
   counselFinalize,
   counselNgtOpinion,
   counselProblemTurn,
+  counselPublicFigureInstruction,
   counselRankVotes,
   counselVoteOptions,
   storeCounselMinutes,
@@ -36,6 +37,10 @@ type Props = {
   rtLib: { name: string; instruction: string }[];
   /** When provided, new custom personas are appended to the shared roundtable library (local storage). */
   onPersistPersonaToLib?: (name: string, instruction: string) => void;
+  /** Update an existing library entry by name (same storage as roundtable). */
+  onUpdatePersonaInLib?: (name: string, instruction: string) => void;
+  /** Remove a saved library entry by name. */
+  onRemovePersonaFromLib?: (name: string) => void;
 };
 
 const HOST = "Host";
@@ -127,7 +132,9 @@ export default function AssistantCounselFlow(props: Props) {
     sandboxMode,
     loadMainGraph,
     rtLib,
-    onPersistPersonaToLib
+    onPersistPersonaToLib,
+    onUpdatePersonaInLib,
+    onRemovePersonaFromLib
   } = props;
 
   const combined = useMemo(() => combineGraphs(mainGraph, sandboxGraph), [mainGraph, sandboxGraph]);
@@ -140,6 +147,9 @@ export default function AssistantCounselFlow(props: Props) {
   const [slugKeywords, setSlugKeywords] = useState("");
   const [newPersonaName, setNewPersonaName] = useState("");
   const [newPersonaInstruction, setNewPersonaInstruction] = useState("");
+  const [libEditName, setLibEditName] = useState<string | null>(null);
+  const [libEditDraft, setLibEditDraft] = useState("");
+  const [publicFigBusy, setPublicFigBusy] = useState(false);
   const [factThreads, setFactThreads] = useState<Record<string, FactThread>>({});
   const [questionsAsked, setQuestionsAsked] = useState<Record<string, number>>({});
   const [opinions, setOpinions] = useState<Record<string, string>>({});
@@ -226,6 +236,9 @@ export default function AssistantCounselFlow(props: Props) {
     setFinalizeResult(null);
     setNewPersonaName("");
     setNewPersonaInstruction("");
+    setLibEditName(null);
+    setLibEditDraft("");
+    setPublicFigBusy(false);
     setFactSkippedIds({});
     setFactLoading({});
     factInFlightRef.current = new Set();
@@ -254,6 +267,24 @@ export default function AssistantCounselFlow(props: Props) {
     setNewPersonaName("");
     setNewPersonaInstruction("");
   }, [newPersonaName, newPersonaInstruction, personas, onPersistPersonaToLib]);
+
+  const generatePublicFigureInstruction = useCallback(async () => {
+    const name = newPersonaName.trim();
+    if (!name) {
+      setError(t("counsel_public_figure_need_name"));
+      return;
+    }
+    setPublicFigBusy(true);
+    setError("");
+    try {
+      const out = await counselPublicFigureInstruction(backendBase, name);
+      setNewPersonaInstruction(out.instruction.slice(0, 8000));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "error");
+    } finally {
+      setPublicFigBusy(false);
+    }
+  }, [backendBase, newPersonaName, t]);
 
   const runProblemTurn = useCallback(async () => {
     if (!selectedNodeId?.trim()) {
@@ -517,6 +548,13 @@ export default function AssistantCounselFlow(props: Props) {
     return collisionAreas.filter((a) => selectedCollisionIds.has(a.id));
   }, [collisionAreas, selectedCollisionIds]);
 
+  const selectedAreaListRef = useRef(selectedAreaList);
+  selectedAreaListRef.current = selectedAreaList;
+  const debateTranscriptsRef = useRef(debateTranscripts);
+  debateTranscriptsRef.current = debateTranscripts;
+  const problemSummaryRef = useRef(problemSummary);
+  problemSummaryRef.current = problemSummary;
+
   const currentDebateArea = selectedAreaList[debateAreaIdx];
 
   const advanceDebate = useCallback(async () => {
@@ -585,38 +623,14 @@ export default function AssistantCounselFlow(props: Props) {
     return () => window.clearTimeout(timer);
   }, [phase, debatePaused, currentDebateArea?.id, debateMsgCount, debateMsgLimit, busy, debateAreaIdx]);
 
-  const endCurrentAreaOrNext = useCallback(() => {
-    if (debateAreaIdx + 1 < selectedAreaList.length) {
-      setDebateAreaIdx((i) => i + 1);
-      setDebateMsgCount(0);
-      setDebateMsgLimit(30);
-      setError("");
-    } else {
-      setPhase("vote");
-    }
-  }, [debateAreaIdx, selectedAreaList.length]);
-
-  const submitDebateUser = useCallback(() => {
-    const line = debateUserLine.trim();
-    const tid = currentDebateArea?.id;
-    if (!tid || !line) return;
-    setDebateTranscripts((prev) => ({
-      ...prev,
-      [tid]: [...(prev[tid] || []), { speaker: "User", content: line }]
-    }));
-    setDebateUserLine("");
-    setDebatePaused(false);
-    setDebateMsgCount((c) => c + 1);
-  }, [debateUserLine, currentDebateArea]);
-
-  const runVoteOptions = useCallback(async () => {
-    const digest = buildDebateDigest(selectedAreaList, debateTranscripts);
+  const loadVoteOptions = useCallback(async () => {
+    const digest = buildDebateDigest(selectedAreaListRef.current, debateTranscriptsRef.current);
     setBusy(true);
     setError("");
     try {
       const out = await counselVoteOptions(backendBase, {
-        problem_summary: problemSummary,
-        selected_areas: selectedAreaList.map((a) => ({ id: a.id, title: a.title })),
+        problem_summary: problemSummaryRef.current,
+        selected_areas: selectedAreaListRef.current.map((a) => ({ id: a.id, title: a.title })),
         debate_digest: digest
       });
       const areas = (out.areas || []) as { area_id?: string; options?: { id: string; label: string }[] }[];
@@ -635,7 +649,32 @@ export default function AssistantCounselFlow(props: Props) {
     } finally {
       setBusy(false);
     }
-  }, [backendBase, problemSummary, selectedAreaList, debateTranscripts]);
+  }, [backendBase]);
+
+  const endCurrentAreaOrNext = useCallback(() => {
+    if (debateAreaIdx + 1 < selectedAreaList.length) {
+      setDebateAreaIdx((i) => i + 1);
+      setDebateMsgCount(0);
+      setDebateMsgLimit(30);
+      setError("");
+    } else {
+      setPhase("vote");
+      void loadVoteOptions();
+    }
+  }, [debateAreaIdx, selectedAreaList.length, loadVoteOptions]);
+
+  const submitDebateUser = useCallback(() => {
+    const line = debateUserLine.trim();
+    const tid = currentDebateArea?.id;
+    if (!tid || !line) return;
+    setDebateTranscripts((prev) => ({
+      ...prev,
+      [tid]: [...(prev[tid] || []), { speaker: "User", content: line }]
+    }));
+    setDebateUserLine("");
+    setDebatePaused(false);
+    setDebateMsgCount((c) => c + 1);
+  }, [debateUserLine, currentDebateArea]);
 
   const runRankVotes = useCallback(async () => {
     if (!voteOptionAreas.length) return;
@@ -803,17 +842,82 @@ export default function AssistantCounselFlow(props: Props) {
           </ul>
           <div>
             <div className="text-[10px] font-medium">{t("counsel_add_lib")}</div>
-            <div className="mt-1 flex max-h-24 flex-col gap-1 overflow-auto">
+            <div className="mt-1 flex max-h-36 flex-col gap-2 overflow-auto">
               {rtLib.map((x) => (
-                <button
-                  key={x.name}
-                  type="button"
-                  className="text-left text-[10px] text-sky-600 underline"
-                  disabled={personas.length >= 8}
-                  onClick={() => addPersonaFromLib(x.name, x.instruction)}
-                >
-                  + {x.name}
-                </button>
+                <div key={x.name} className="rounded border border-slate-200 px-2 py-1 dark:border-slate-600">
+                  {libEditName === x.name && onUpdatePersonaInLib ? (
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-medium text-slate-800 dark:text-slate-100">{x.name}</div>
+                      <textarea
+                        className="w-full resize-y rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] dark:border-slate-600 dark:bg-slate-900"
+                        rows={4}
+                        value={libEditDraft}
+                        onChange={(e) => setLibEditDraft(e.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="ios-button py-0.5 text-[9px]"
+                          onClick={() => {
+                            onUpdatePersonaInLib(x.name, libEditDraft);
+                            setLibEditName(null);
+                          }}
+                        >
+                          {t("counsel_lib_save")}
+                        </button>
+                        <button type="button" className="ios-button py-0.5 text-[9px]" onClick={() => setLibEditName(null)}>
+                          {t("counsel_lib_cancel")}
+                        </button>
+                        {onRemovePersonaFromLib ? (
+                          <button
+                            type="button"
+                            className="py-0.5 text-[9px] text-red-600 hover:underline dark:text-red-400"
+                            onClick={() => {
+                              onRemovePersonaFromLib(x.name);
+                              setLibEditName(null);
+                            }}
+                          >
+                            {t("counsel_lib_remove")}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        className="text-left text-[10px] text-sky-600 underline dark:text-sky-400"
+                        disabled={personas.length >= 8}
+                        onClick={() => addPersonaFromLib(x.name, x.instruction)}
+                      >
+                        + {x.name}
+                      </button>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {onUpdatePersonaInLib ? (
+                          <button
+                            type="button"
+                            className="text-[9px] text-slate-600 underline dark:text-slate-400"
+                            onClick={() => {
+                              setLibEditName(x.name);
+                              setLibEditDraft(x.instruction);
+                            }}
+                          >
+                            {t("counsel_lib_edit")}
+                          </button>
+                        ) : null}
+                        {onRemovePersonaFromLib ? (
+                          <button
+                            type="button"
+                            className="text-[9px] text-red-600 hover:underline dark:text-red-400"
+                            onClick={() => onRemovePersonaFromLib(x.name)}
+                          >
+                            {t("counsel_lib_remove")}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -860,7 +964,15 @@ export default function AssistantCounselFlow(props: Props) {
             </div>
             <button
               type="button"
-              className="ios-button mt-2 w-full py-1.5 text-[11px]"
+              className="ios-button mt-2 w-full py-1.5 text-[10px] disabled:opacity-50"
+              disabled={personas.length >= 8 || publicFigBusy || !newPersonaName.trim()}
+              onClick={() => void generatePublicFigureInstruction()}
+            >
+              {publicFigBusy ? t("counsel_public_figure_busy") : t("counsel_public_figure_btn")}
+            </button>
+            <button
+              type="button"
+              className="ios-button-primary mt-2 w-full py-1.5 text-[11px]"
               disabled={personas.length >= 8 || !newPersonaName.trim() || !newPersonaInstruction.trim()}
               onClick={() => addCustomPersona()}
             >
@@ -1086,9 +1198,15 @@ export default function AssistantCounselFlow(props: Props) {
       {phase === "vote" && (
         <div className="ios-card space-y-2 p-2">
           {voteOptionAreas.length === 0 ? (
-            <button type="button" className="ios-button-primary w-full py-2" disabled={busy} onClick={() => void runVoteOptions()}>
-              {t("counsel_gen_options")}
-            </button>
+            <div className="space-y-2">
+              {busy ? (
+                <p className="text-[10px] text-slate-600 dark:text-slate-400">{t("counsel_vote_generating")}</p>
+              ) : (
+                <button type="button" className="ios-button-primary w-full py-2" disabled={busy} onClick={() => void loadVoteOptions()}>
+                  {t("counsel_regen_options")}
+                </button>
+              )}
+            </div>
           ) : (
             <>
               {voteOptionAreas.map((a) => {
@@ -1106,9 +1224,19 @@ export default function AssistantCounselFlow(props: Props) {
               );
               })}
               {!rawVotes?.length ? (
-                <button type="button" className="ios-button-primary w-full py-2" disabled={busy} onClick={() => void runRankVotes()}>
-                  {t("counsel_simulate_votes")}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="ios-button w-full py-1 text-[9px]"
+                    disabled={busy}
+                    onClick={() => void loadVoteOptions()}
+                  >
+                    {t("counsel_regen_options")}
+                  </button>
+                  <button type="button" className="ios-button-primary w-full py-2" disabled={busy} onClick={() => void runRankVotes()}>
+                    {t("counsel_simulate_votes")}
+                  </button>
+                </>
               ) : (
                 <>
                   <div className="rounded-lg border border-slate-200 bg-white/80 p-2 dark:border-slate-600 dark:bg-slate-900/40">

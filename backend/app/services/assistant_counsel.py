@@ -119,6 +119,21 @@ Rules:
 """
 
 
+COUNSEL_PUBLIC_FIGURE_SYSTEM = """You write a single "persona instruction" string for a multi-person counsel / roundtable LLM session.
+Return JSON only. No markdown.
+
+Schema:
+{ "instruction": "string" }
+
+Rules:
+- The user names a real public figure. You receive short excerpts from open-web search (news, encyclopedias, interviews, speeches). Ground speaking style, argument patterns, and visible expertise themes ONLY in those excerpts. Where excerpts are thin or ambiguous, say so inside the instruction and stay conservative.
+- The instruction tells the model to roleplay in the *spirit* of that figure for professional discussion: do not claim to be the actual person, do not fabricate private facts, do not defame, do not give medical/legal authority.
+- Include: (1) voice and phrasing when supported by excerpts; (2) how they structure arguments when visible; (3) domains of expertise or recurring values from excerpts; (4) an explicit line that this is an approximate simulation for brainstorming and may be incomplete.
+- Write in imperative second person ("You are…", "You prioritize…"). Target 800–2500 characters unless excerpts justify more (cap at ~3500 characters of text in "instruction").
+- Default language: match the user's need; if excerpts are mostly English, write the instruction in English.
+"""
+
+
 COUNSEL_VOTES_SYSTEM = """You simulate ranked voting: each counsel persona submits a strict ranking of options WITHIN each area.
 Return JSON only. No markdown.
 
@@ -526,6 +541,53 @@ def apply_counsel_patch(
         branch_ids=branch_ids,
         patch=patch,
     )
+
+
+def counsel_public_figure_instruction(
+    *,
+    llm: LlmClient,
+    person_name: str,
+) -> dict[str, Any]:
+    """Use Tavily open-web snippets + LLM to draft a persona instruction grounded in public sources."""
+    from app.services.tavily_search import TavilyResult, format_multi_queries_for_prompt, tavily_search
+
+    name = (person_name or "").strip()
+    if not name:
+        raise ValueError("person_name is required")
+
+    queries = (
+        f"{name} Wikipedia biography",
+        f"{name} interviews speeches public statements",
+    )
+    sections: list[tuple[str, list[TavilyResult]]] = []
+    for q in queries:
+        try:
+            rows = tavily_search(query=q, max_results=5)
+        except RuntimeError as e:
+            raise ValueError(str(e)) from e
+        sections.append((q, rows))
+
+    total_hits = sum(len(r[1]) for r in sections)
+    if total_hits == 0:
+        raise ValueError(
+            "No web search results for this name. Try a fuller name or a different spelling. "
+            "Ensure TAVILY_API_KEY / session setup includes Tavily."
+        )
+
+    blob = format_multi_queries_for_prompt(sections)
+    user = (
+        f"The user wants a counsel / roundtable persona based on this public figure: {name}\n\n"
+        f"Open-web excerpts (may be incomplete or erroneous; treat as leads only):\n{blob}\n"
+    )
+    data = llm.generate_json(system=COUNSEL_PUBLIC_FIGURE_SYSTEM, user=user, max_output_tokens=2400)
+    if not isinstance(data, dict):
+        raise ValueError("LLM did not return an object")
+    ins = str(data.get("instruction") or "").strip()
+    if not ins:
+        raise ValueError("Empty instruction from model")
+    if len(ins) > 8000:
+        ins = ins[:7999] + "…"
+    return {"instruction": ins, "source_queries": list(queries)}
 
 
 def build_counsel_minutes_markdown(
