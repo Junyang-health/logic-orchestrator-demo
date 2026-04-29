@@ -654,5 +654,21 @@ export const zh: Record<MessageKey, string> = {
   rt_instr_ph: "语气、专长以及讨论中应优化的目标…",
   rt_add_panel: "将自定义人格加入面板",
   rt_saved_local: "自定义人格也会保存在本地以便快速复用（上方 + 按钮）。",
-  rt_remove: "移除 {name}"
+  rt_remove: "移除 {name}",
+
+  session_setup_title: "会话设置",
+  session_setup_subtitle: "密钥仅保存在本机后端进程内存中本次运行有效，不会写入磁盘，提交后也不会再返回给浏览器。",
+  session_setup_provider: "大模型提供方",
+  session_setup_option_gemini: "Google Gemini",
+  session_setup_option_deepseek: "DeepSeek",
+  session_setup_option_kimi: "Kimi（月之暗面）",
+  session_setup_api_key: "API 密钥",
+  session_setup_model: "模型",
+  session_setup_model_optional: "可选 — 留空使用默认",
+  session_setup_tavily: "Tavily API 密钥（可选，联网搜索）",
+  session_setup_submit: "继续",
+  session_setup_checking: "正在连接服务器…",
+  session_setup_offline: "无法连接后端，请启动后刷新页面。",
+  session_setup_error: "设置失败。",
+  session_setup_key_required: "请填写 API 密钥。"
 };

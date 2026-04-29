@@ -21,6 +21,10 @@ def moonshot_key_present() -> bool:
     return bool((os.getenv("MOONSHOT_API_KEY") or os.getenv("KIMI_API_KEY") or "").strip())
 
 
+def anthropic_key_present() -> bool:
+    return bool((os.getenv("ANTHROPIC_API_KEY") or "").strip())
+
+
 def looks_like_gemini_model(model_id: str) -> bool:
     m = (model_id or "").strip().lower()
     return m.startswith("gemini-") or m.startswith("models/gemini-") or m.startswith("gemini:")

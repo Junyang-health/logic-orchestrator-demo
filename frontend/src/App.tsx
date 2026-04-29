@@ -2,6 +2,7 @@ import type { Graph } from "@antv/x6";
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ProjectLandingOverlay from "./components/ProjectLandingOverlay";
+import SessionSetupGate from "./components/SessionSetupGate";
 import X6Canvas from "./components/X6Canvas";
 import AssistantOverlay from "./components/AssistantOverlay";
 import AssistantAndCanvasRow from "./components/rightDock/AssistantAndCanvasRow";
@@ -63,7 +64,8 @@ export default function App() {
   }, [reparentingNodeId, clearReparent]);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden text-slate-900 dark:text-slate-100">
+    <SessionSetupGate backendBase={backendBase}>
+      <div className="relative h-screen w-screen overflow-hidden text-slate-900 dark:text-slate-100">
       <ThemeDocumentSync />
       <ProjectLandingOverlay backendBase={backendBase} />
       <ClosedDockRevealTabs />
@@ -91,5 +93,6 @@ export default function App() {
         {rightDockOpen ? <AppRightDock graph={graph} backendBase={backendBase} /> : null}
       </div>
     </div>
+    </SessionSetupGate>
   );
 }

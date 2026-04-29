@@ -646,7 +646,24 @@ export const en = {
   rt_instr_ph: "Voice, expertise, and what they should optimize for in discussion…",
   rt_add_panel: "Add custom persona to panel",
   rt_saved_local: "Custom personas are also saved locally for quick reuse (+ buttons above).",
-  rt_remove: "Remove {name}"
+  rt_remove: "Remove {name}",
+
+  session_setup_title: "Session setup",
+  session_setup_subtitle:
+    "Keys stay on the server for this run only. They are not written to disk and are not returned to the browser after you submit.",
+  session_setup_provider: "LLM provider",
+  session_setup_option_gemini: "Google Gemini",
+  session_setup_option_deepseek: "DeepSeek",
+  session_setup_option_kimi: "Kimi (Moonshot)",
+  session_setup_api_key: "API key",
+  session_setup_model: "Model",
+  session_setup_model_optional: "optional — leave empty for defaults",
+  session_setup_tavily: "Tavily API key (optional, web search)",
+  session_setup_submit: "Continue",
+  session_setup_checking: "Checking server…",
+  session_setup_offline: "Could not reach the backend. Start it and refresh this page.",
+  session_setup_error: "Setup failed.",
+  session_setup_key_required: "Enter your API key."
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -1,5 +1,7 @@
+# Interpreter: Python 3.10+ required (markitdown, google-genai, etc. will not install on 3.9).
 fastapi==0.115.8
 uvicorn==0.32.1
+python-dotenv==1.0.1
 pandas==2.2.3
 openpyxl==3.1.5
 anthropic==0.51.0

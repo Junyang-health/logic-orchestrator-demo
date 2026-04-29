@@ -20,6 +20,7 @@ import {
   clearConnectionHighlightOnGraph,
   highlightForEdgeId
 } from "../lib/x6CanvasGraphUtils";
+import { getBackendBase } from "../lib/backendBase";
 import useUiStore from "../store/useUiStore";
 
 
@@ -178,9 +179,6 @@ export default function X6Canvas(props: {
       }, 80);
     };
     graph.on("node:change:size", scheduleDagreFromNodeSize);
-
-    const getBackendBase = () =>
-      ((import.meta as any).env?.VITE_BACKEND_URL as string) || "http://localhost:8000";
 
     const collectEvidenceSnippets = () => {
       const snippets: string[] = [];

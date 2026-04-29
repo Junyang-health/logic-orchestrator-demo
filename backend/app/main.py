@@ -1,3 +1,10 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_backend_dir = Path(__file__).resolve().parent.parent
+load_dotenv(_backend_dir / ".env")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,8 +15,16 @@ from app.routers.models import router as models_router
 from app.routers.projects import router as projects_router
 from app.routers.assistant import router as assistant_router
 from app.routers.word_export import router as word_export_router
+from app.routers.session import router as session_router
 
 app = FastAPI(title="backend")
+
+
+@app.on_event("startup")
+def _session_autofill_on_startup() -> None:
+    from app.services.session_wizard import maybe_autocomplete_wizard_from_dotenv
+
+    maybe_autocomplete_wizard_from_dotenv()
 
 allowed_origins = [
     "http://localhost:5173",
@@ -34,6 +49,7 @@ def health():
     return {"status": "ok"}
 
 
+app.include_router(session_router)
 app.include_router(upload_router)
 app.include_router(validate_router)
 app.include_router(review_router)
