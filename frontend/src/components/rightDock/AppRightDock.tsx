@@ -21,7 +21,7 @@ export default function AppRightDock(props: { graph: Graph | null; backendBase: 
 
   return (
     <aside
-      className="min-h-0 min-w-0 shrink-0 overflow-hidden"
+      className="min-h-0 min-w-0 shrink-0 overflow-hidden border-l border-[var(--mm-border-subtle)] bg-[var(--mm-sidebar-bg)]"
       style={{ flex: "0 0 clamp(280px, 32vw, 440px)" }}
     >
       <div className="flex h-full min-w-0 flex-col">

@@ -1,27 +1,39 @@
-import { MessageCircle, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { X } from "lucide-react";
 
 type Props = {
   title: string;
   closeLabel: string;
   onClose: () => void;
+  /** Centered segmented control (mode switcher). */
+  center?: ReactNode;
 };
 
-export default function AssistantPanelHeader({ title, closeLabel, onClose }: Props) {
+export default function AssistantPanelHeader({ title, closeLabel, onClose, center }: Props) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-2 py-2 dark:border-slate-800">
-      <MessageCircle className="h-4 w-4 text-slate-600 dark:text-slate-400" />
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">{title}</span>
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+    <header className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-black/[0.05] px-3 py-2.5 dark:border-white/[0.05] sm:px-4">
+      <div className="min-w-0 justify-self-start">
+        <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">{title}</h2>
+      </div>
+      {center ? (
+        <div className="min-w-0 max-w-[min(100vw-10rem,40rem)] justify-self-center overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {center}
+        </div>
+      ) : (
+        <span className="justify-self-center" aria-hidden />
+      )}
+      <div className="min-w-0 justify-self-end">
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 text-[10px] font-medium text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-black/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.08]"
           title={closeLabel}
+          aria-label={closeLabel}
           onClick={onClose}
         >
-          <X className="h-3.5 w-3.5" aria-hidden />
-          {closeLabel}
+          <X className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="hidden sm:inline">{closeLabel}</span>
         </button>
       </div>
-    </div>
+    </header>
   );
 }

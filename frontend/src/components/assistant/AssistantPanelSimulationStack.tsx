@@ -2,8 +2,10 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   AffectedNodeHint,
   BranchFinancialExtract,
+  MeterInputs,
   OptimismMetric
 } from "../../lib/optimismMeter";
+import type { MindmapJson } from "../../types/mindmap";
 import type {
   BlackSwanRunBundle,
   BlackSwanScenario,
@@ -23,7 +25,7 @@ type OptimismPreview = {
   pctLabel: Record<OptimismMetric, string | null>;
 };
 
-type Props = {
+export type AssistantPanelSimulationStackProps = {
   mode: AssistantPanelMode;
   simReport: string;
   simReportTitle: string;
@@ -39,7 +41,13 @@ type Props = {
   optimismAffected: AffectedNodeHint[];
   simBusy: boolean;
   onApplyOptimism: () => void;
+  meterInputs: MeterInputs | null;
+  setMeterInputs: Dispatch<SetStateAction<MeterInputs | null>>;
+  backendBase: string;
+  combinedGraphForOptimism: MindmapJson;
   selectedNodeId: string | undefined;
+  /** Label or id for optimism branch-root UX (audit card, add-metrics CTA). */
+  optimismBranchRootLabel: string;
   bsScenarios: BlackSwanScenario[] | null;
   bsSelectedScenarioIds: Set<string>;
   onToggleScenario: (id: string) => void;
@@ -49,6 +57,7 @@ type Props = {
   onBlackSwanScan: () => void;
   onBlackSwanRun: () => void;
   onBlackSwanApply: () => void;
+  onBlackSwanBackFromResults: () => void;
   meceScanBundle: MeceScanBundle | null;
   meceSelectedMods: Set<string>;
   onToggleMeceModification: (id: string) => void;
@@ -57,8 +66,10 @@ type Props = {
   meceWebBusyId: string | null;
   onMeceScan: () => void;
   onMeceEvidence: () => void;
-  onMeceWebSearchForMod: (modId: string) => void;
+  onMeceWebSearchForMod: (modId: string, query: string) => void;
   onMeceApply: () => void;
+  meceNodeLabelById: Record<string, string>;
+  onMeceFocusCanvasNode: (nodeId: string) => void;
   rtPersonas: RoundtablePersona[];
   rtLib: { name: string; instruction: string }[];
   rtNewName: string;
@@ -69,6 +80,8 @@ type Props = {
   onAddFromLib: (name: string, instruction: string) => void;
   onRemoveRtPersona: (id: string) => void;
   onAddRtCustom: () => void;
+  /** When true, roundtable setup and persona library are hidden; roster stays in transcript header. */
+  rtDiscussionStarted?: boolean;
 };
 
 export default function AssistantPanelSimulationStack({
@@ -87,7 +100,12 @@ export default function AssistantPanelSimulationStack({
   optimismAffected,
   simBusy,
   onApplyOptimism,
+  meterInputs,
+  setMeterInputs,
+  backendBase,
+  combinedGraphForOptimism,
   selectedNodeId,
+  optimismBranchRootLabel,
   bsScenarios,
   bsSelectedScenarioIds,
   onToggleScenario,
@@ -97,6 +115,7 @@ export default function AssistantPanelSimulationStack({
   onBlackSwanScan,
   onBlackSwanRun,
   onBlackSwanApply,
+  onBlackSwanBackFromResults,
   meceScanBundle,
   meceSelectedMods,
   onToggleMeceModification,
@@ -107,6 +126,8 @@ export default function AssistantPanelSimulationStack({
   onMeceEvidence,
   onMeceWebSearchForMod,
   onMeceApply,
+  meceNodeLabelById,
+  onMeceFocusCanvasNode,
   rtPersonas,
   rtLib,
   rtNewName,
@@ -116,16 +137,32 @@ export default function AssistantPanelSimulationStack({
   onAddRtPreset,
   onAddFromLib,
   onRemoveRtPersona,
-  onAddRtCustom
-}: Props) {
+  onAddRtCustom,
+  rtDiscussionStarted
+}: AssistantPanelSimulationStackProps) {
   if (mode === "counsel") return null;
 
   if (mode === "chat" && !simReport) return null;
 
+  const simScrollable =
+    mode === "optimism" || mode === "blackSwan" || mode === "mece"
+      ? "mm-assistant-thin-scrollbar max-h-[min(62vh,44rem)] overflow-y-auto overflow-x-hidden"
+      : mode === "roundtable"
+        ? "overflow-x-hidden"
+        : "mm-assistant-thin-scrollbar max-h-[min(50vh,28rem)] overflow-y-auto overflow-x-hidden";
+
   return (
-    <div className="max-h-[min(50vh,28rem)] shrink-0 overflow-y-auto overflow-x-hidden border-b border-slate-200 bg-slate-50/80 p-2 dark:border-slate-800 dark:bg-slate-950/80">
+    <div
+      className={[
+        "shrink-0 border-b border-slate-200 bg-slate-50/80 p-2 dark:border-slate-800 dark:bg-slate-950/80",
+        mode === "roundtable" ? "border-t border-slate-200/75 dark:border-slate-800/90" : "",
+        simScrollable
+      ].join(" ")}
+    >
       {mode === "optimism" && (
         <AssistantOptimismTab
+          branchRootId={selectedNodeId}
+          branchRootDisplayName={optimismBranchRootLabel}
           branchFinancial={branchFinancial}
           optimismMetricsAvailable={optimismMetricsAvailable}
           optimismFocus={optimismFocus}
@@ -138,12 +175,17 @@ export default function AssistantPanelSimulationStack({
           optimismAffected={optimismAffected}
           simBusy={simBusy}
           onApplyOptimism={onApplyOptimism}
+          meterInputs={meterInputs}
+          setMeterInputs={setMeterInputs}
+          backendBase={backendBase}
+          combinedGraphForOptimism={combinedGraphForOptimism}
         />
       )}
 
       {mode === "blackSwan" && (
         <AssistantBlackSwanTab
           selectedNodeId={selectedNodeId}
+          anchorLabel={optimismBranchRootLabel}
           simBusy={simBusy}
           bsScenarios={bsScenarios}
           bsSelectedScenarioIds={bsSelectedScenarioIds}
@@ -154,6 +196,7 @@ export default function AssistantPanelSimulationStack({
           onScan={onBlackSwanScan}
           onRun={onBlackSwanRun}
           onApply={onBlackSwanApply}
+          onBackFromResults={onBlackSwanBackFromResults}
         />
       )}
 
@@ -171,11 +214,14 @@ export default function AssistantPanelSimulationStack({
           onEvidence={onMeceEvidence}
           onWebSearchForMod={onMeceWebSearchForMod}
           onApply={onMeceApply}
+          nodeLabelById={meceNodeLabelById}
+          onFocusCanvasNode={onMeceFocusCanvasNode}
         />
       )}
 
       {mode === "roundtable" && (
         <AssistantRoundtableTab
+          discussionStarted={Boolean(rtDiscussionStarted)}
           rtPersonas={rtPersonas}
           rtLib={rtLib}
           rtNewName={rtNewName}
@@ -189,7 +235,7 @@ export default function AssistantPanelSimulationStack({
         />
       )}
 
-      {simReport ? (
+      {simReport && mode !== "optimism" && mode !== "blackSwan" && mode !== "mece" ? (
         <div className="mt-3 ios-card p-3 text-[11px] text-slate-700 dark:text-slate-200">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             {simReportTitle}

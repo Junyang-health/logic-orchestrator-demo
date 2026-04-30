@@ -55,46 +55,58 @@ function AssistantSkillsBlockInner(props: AssistantSkillsBlockProps) {
   const [addOpen, setAddOpen] = useState(false);
 
   return (
-    <div className="space-y-1.5">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className="space-y-4">
+      <div className="text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
         {t("skills_lenses")}
       </div>
-      <div className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-800 dark:text-slate-100">
-          <input
-            type="checkbox"
-            className="shrink-0 rounded border-slate-300 text-sky-600 dark:border-slate-600"
-            checked={builtinWebSearch}
-            onChange={() => onToggleBuiltinSkill("webSearch")}
-          />
-          <span className="leading-tight">{t("skills_web_lens")}</span>
-        </label>
-        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-800 dark:text-slate-100">
-          <input
-            type="checkbox"
-            className="shrink-0 rounded border-slate-300 text-sky-600 dark:border-slate-600"
-            checked={builtinFinancialAnalyst}
-            onChange={() => onToggleBuiltinSkill("financialAnalyst")}
-          />
-          <span className="leading-tight">{t("skills_finance_lens")}</span>
-        </label>
-        {customSkills.map((s, i) => {
-          const detailsOpen = Boolean(skillDetailsOpen[s.id]);
-          const sep = i === 0 ? "mt-1.5 border-t border-slate-100 pt-1.5 dark:border-slate-700/80" : "border-t border-slate-100 pt-1 dark:border-slate-700/80";
-          return (
-            <div key={s.id} className={sep}>
-              <div className="flex items-center gap-1.5">
-                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-[11px] text-slate-800 dark:text-slate-100">
-                  <input
-                    type="checkbox"
-                    className="shrink-0 rounded border-slate-300 text-sky-600 dark:border-slate-600"
-                    checked={s.enabled}
-                    onChange={() => onToggleCustomSkill(s.id)}
-                    title={t("skills_use")}
-                  />
-                  <span className="truncate">{s.name.trim() || t("custom_skill")}</span>
-                </label>
-                <button
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 text-[11px] text-slate-800 dark:text-slate-100">
+          <span className="min-w-0 leading-tight">{t("skills_web_lens")}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={builtinWebSearch}
+            className="ios-toggle-compact"
+            onClick={() => onToggleBuiltinSkill("webSearch")}
+          >
+            <span className="ios-toggle-track" data-on={builtinWebSearch} />
+            <span className="ios-toggle-knob" data-on={builtinWebSearch} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-3 text-[11px] text-slate-800 dark:text-slate-100">
+          <span className="min-w-0 leading-tight">{t("skills_finance_lens")}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={builtinFinancialAnalyst}
+            className="ios-toggle-compact"
+            onClick={() => onToggleBuiltinSkill("financialAnalyst")}
+          >
+            <span className="ios-toggle-track" data-on={builtinFinancialAnalyst} />
+            <span className="ios-toggle-knob" data-on={builtinFinancialAnalyst} />
+          </button>
+        </div>
+      </div>
+      {customSkills.map((s) => {
+        const detailsOpen = Boolean(skillDetailsOpen[s.id]);
+        return (
+          <div key={s.id} className="mt-3 border-t border-slate-200/80 pt-3 dark:border-slate-700/80">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[11px] text-slate-800 dark:text-slate-100">
+                {s.name.trim() || t("custom_skill")}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={s.enabled}
+                title={t("skills_use")}
+                className="ios-toggle-compact shrink-0"
+                onClick={() => onToggleCustomSkill(s.id)}
+              >
+                <span className="ios-toggle-track" data-on={s.enabled} />
+                <span className="ios-toggle-knob" data-on={s.enabled} />
+              </button>
+              <button
                   type="button"
                   className="inline-flex shrink-0 items-center justify-center rounded p-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                   title={detailsOpen ? t("skills_hide_instr") : t("skills_show_edit_instr")}
@@ -113,7 +125,7 @@ function AssistantSkillsBlockInner(props: AssistantSkillsBlockProps) {
                 </button>
               </div>
               {detailsOpen ? (
-                <div className="mt-1.5 space-y-1 border-l-2 border-slate-200 pl-2 dark:border-slate-600">
+                <div className="mt-1.5 space-y-1 pl-1">
                   <input
                     type="text"
                     className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-800 outline-none dark:border-slate-600 dark:bg-slate-950/80 dark:text-slate-100"
@@ -138,8 +150,7 @@ function AssistantSkillsBlockInner(props: AssistantSkillsBlockProps) {
               ) : null}
             </div>
           );
-        })}
-      </div>
+      })}
 
       <button
         type="button"

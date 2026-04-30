@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { LoadMainGraphOptions } from "../../store/useUiStore";
+import type { MessageKey } from "../../i18n/messages";
 import type { AffectedNodeHint, MeterInputs, OptimismMetric } from "../../lib/optimismMeter";
 import type { MindmapJson } from "../../types/mindmap";
 import type {
@@ -12,12 +13,16 @@ import type {
   RoundtablePersona,
   RoundtableTranscriptRow
 } from "./assistantTypes";
+import type { AssistantPanelMode } from "./assistantPanelMode";
 
 /** Latest values read by assistant HTTP handlers; sync this ref every render before invoking handlers. */
 export type AssistantPanelActionsCtx = {
+  assistantMode: AssistantPanelMode;
   backendBase: string;
   combined: MindmapJson;
   selectedNodeId: string | undefined;
+  /** i18n for generic async error copy */
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string;
   draft: string;
   chatBusy: boolean;
   messages: ChatRow[];

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Image as ImageIcon, Trash2, Upload } from "lucide-react";
+import { FileText, Image as ImageIcon, Info, Settings, Trash2, Upload } from "lucide-react";
 import { useI18n } from "../i18n/useI18n";
 import { MIN_INTENT_BOOTSTRAP, runMindmapBuild } from "../lib/mindmapBuild";
 import useUiStore from "../store/useUiStore";
@@ -332,16 +332,16 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     <div className="ios-card p-3">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("sm_title")}</div>
-          <p className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-slate-300">{t("sm_intro")}</p>
+          <div className="text-xs font-medium text-[var(--mm-text-title)]">{t("sm_title")}</div>
+          <p className="mt-1 text-[11px] font-medium leading-[1.5] text-[var(--mm-text-muted)]">{t("sm_intro")}</p>
         </div>
-        <Upload className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+        <Upload className="mt-0.5 h-4 w-4 shrink-0 text-[var(--mm-cta-blue)] dark:text-slate-400" aria-hidden />
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 flex gap-2">
         <button
           type="button"
-          className="ios-button-primary w-full py-2 text-[12px]"
+          className="ios-button-primary min-w-0 flex-1 py-2 text-[12px]"
           onClick={() => {
             try {
               const cur = useUiStore.getState().projectId;
@@ -354,13 +354,19 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         >
           {t("sm_new_project_wizard")}
         </button>
-        <button type="button" className="mt-1.5 text-[10px] text-sky-700 underline dark:text-sky-400" onClick={() => openProjectLanding("first_visit")}>
-          {t("sm_open_setup")}
+        <button
+          type="button"
+          className="ios-button-secondary flex h-[2.5rem] w-[2.5rem] shrink-0 items-center justify-center p-0"
+          title={t("sm_open_setup")}
+          aria-label={t("sm_open_setup")}
+          onClick={() => openProjectLanding("first_visit")}
+        >
+          <Settings className="h-4 w-4" strokeWidth={2} aria-hidden />
         </button>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-slate-700 dark:text-slate-200">
+        <label className="text-[11px] font-medium text-[var(--mm-text-title)]">
           {t("sm_project")}
           <select
             className="mt-1 ios-select"
@@ -375,7 +381,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
             ))}
           </select>
         </label>
-        <div className="text-[11px] text-slate-700 dark:text-slate-200">
+        <div className="text-[11px] font-medium text-[var(--mm-text-title)]">
           {t("sm_quick_create")}
           <div className="mt-1 flex gap-2">
             <input
@@ -402,7 +408,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
             />
             <button
               type="button"
-              className="ios-button shrink-0"
+              className="ios-button-secondary shrink-0"
               onClick={async () => {
                 const name = newProjectName.trim();
                 if (!name) return;
@@ -425,39 +431,51 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         </div>
       </div>
 
-      <button
-        type="button"
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50/80 py-1.5 text-[11px] font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 disabled:opacity-50"
-        disabled={!projectId || projectDeleteBusy}
-        onClick={() => void deleteEntireProject()}
-      >
-        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        {t("sm_project_delete_btn")}
-      </button>
+      <div className="mt-3 border-t border-[var(--mm-border-subtle)] pt-2">
+        <button
+          type="button"
+          className="ios-button-ghost px-0 py-0 text-[10px] font-medium underline decoration-[var(--mm-text-placeholder)] underline-offset-4 disabled:opacity-40"
+          disabled={!projectId || projectDeleteBusy}
+          onClick={() => void deleteEntireProject()}
+        >
+          {t("sm_project_delete_btn")}
+        </button>
+      </div>
 
       {projectId ? (
-        <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-2.5 dark:border-slate-600 dark:bg-slate-950/40">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-            {t("sm_saved_canvas")}
+        <div className="mm-sidebar-section mt-3 p-2.5 dark:border-[var(--mm-border-subtle)] dark:bg-slate-950/40 dark:shadow-none">
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-[var(--mm-text-title)]">{t("sm_saved_canvas")}</div>
+            <button
+              type="button"
+              className="inline-flex rounded p-0.5 text-[var(--mm-text-placeholder)] hover:bg-black/[0.05] hover:text-[var(--mm-text-muted)] dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+              title={t("sm_saved_help")}
+              aria-label={t("sm_saved_help")}
+            >
+              <Info className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            </button>
           </div>
-          <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("sm_saved_help")}</p>
           {savedCanvasUpdatedMs ? (
-            <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-[9px] font-medium text-[var(--mm-text-muted)]">
               {t("sm_last_saved")} {new Date(savedCanvasUpdatedMs).toLocaleString()}
             </p>
           ) : (
-            <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">{t("sm_no_save_yet")}</p>
+            <p className="mt-1 text-[9px] font-medium text-[var(--mm-text-placeholder)]">{t("sm_no_save_yet")}</p>
           )}
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              className="ios-button-primary px-3 py-1.5 text-[11px] disabled:opacity-50"
+              className="ios-button-secondary px-3 py-1.5 text-[11px] disabled:opacity-50"
               disabled={saveBusy || !hasCanvasNodes}
               onClick={() => void saveCanvasToProject()}
             >
               {saveBusy ? t("sm_save_busy") : t("sm_save_btn")}
             </button>
-            <button type="button" className="ios-button px-3 py-1.5 text-[11px]" onClick={() => void fetchAndApplySavedCanvas()}>
+            <button
+              type="button"
+              className="ios-button-ghost px-3 py-1.5 text-[11px]"
+              onClick={() => void fetchAndApplySavedCanvas()}
+            >
               {t("sm_reload")}
             </button>
           </div>
@@ -473,7 +491,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         </div>
       ) : null}
 
-      <label className="mt-3 block text-[11px] text-slate-700 dark:text-slate-200">
+      <label className="mt-3 block text-[11px] font-medium text-[var(--mm-text-title)]">
         {t("sm_intent", { n: MIN_INTENT_BOOTSTRAP })}
         <textarea
           className="mt-1 ios-input resize-y"
@@ -508,14 +526,15 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
         }}
         onClick={() => inputRef.current?.click()}
         className={[
-          "mt-3 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-3 py-6 text-center transition-colors",
+          "mm-sidebar-section mt-3 flex cursor-pointer flex-col items-center justify-center border-2 border-dashed bg-[var(--mm-card-bg)] px-3 py-6 text-center transition-colors dark:border-[var(--mm-drop-zone-border)]",
           dragOver
-            ? "border-sky-500 bg-white/70 shadow-sm backdrop-blur-xl dark:bg-slate-900/60"
-            : "border-slate-200/80 bg-white/55 hover:border-slate-300 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/40 dark:hover:border-slate-600"
+            ? "border-[var(--mm-cta-blue)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--mm-cta-blue)_16%,transparent)] dark:bg-slate-900/60"
+            : "border-[var(--mm-drop-zone-border)] hover:border-[color-mix(in_srgb,var(--mm-cta-blue)_45%,var(--mm-section-border))] dark:border-slate-700/70 dark:bg-slate-900/40 dark:hover:border-slate-600"
         ].join(" ")}
       >
-        <span className="text-xs font-medium text-slate-700 dark:text-slate-100">{t("sm_drop")}</span>
-        <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{t("sm_multi")}</span>
+        <Upload className="mb-2 h-8 w-8 text-[var(--mm-cta-blue)] dark:text-slate-400" strokeWidth={1.75} aria-hidden />
+        <span className="text-xs font-medium text-[var(--mm-text-title)]">{t("sm_drop")}</span>
+        <span className="mt-1 text-[11px] font-medium leading-[1.5] text-[var(--mm-text-muted)]">{t("sm_multi")}</span>
         <input
           ref={inputRef}
           type="file"
@@ -545,7 +564,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
 
       {sourceFiles.length > 0 && (
         <div className="mt-3 space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-slate-600">
+          <div className="flex items-center justify-between text-[11px] font-medium text-[var(--mm-text-muted)]">
             <span>{t("sm_queued", { n: sourceFiles.length })}</span>
             <button
               type="button"
@@ -558,13 +577,13 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
               {t("sm_clear_all")}
             </button>
           </div>
-          <ul className="max-h-40 space-y-1 overflow-auto rounded border border-slate-100 bg-slate-50 p-1">
+          <ul className="mm-sidebar-section max-h-40 space-y-1 overflow-auto p-1 dark:border-[var(--mm-border-subtle)] dark:bg-slate-900/40 dark:shadow-none">
             {sourceFiles.map((entry) => {
               const kind = classifySourceKind(entry.file);
               return (
                 <li
                   key={entry.id}
-                  className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-[11px] text-slate-800"
+                  className="flex items-center gap-2 rounded-md bg-[color-mix(in_srgb,var(--mm-sidebar-bg)_55%,var(--mm-card-bg))] px-2 py-1.5 text-[11px] text-[var(--mm-text-title)] dark:bg-slate-900/50"
                 >
                   {kind === "excel" ? (
                     <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
@@ -576,7 +595,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                   <span className="min-w-0 flex-1 truncate font-medium" title={entry.file.name}>
                     {entry.file.name}
                   </span>
-                  <span className="shrink-0 text-slate-500">{formatBytes(entry.file.size)}</span>
+                  <span className="mm-hud-mono shrink-0 tabular-nums text-[var(--mm-text-muted)]">{formatBytes(entry.file.size)}</span>
                   <button
                     type="button"
                     className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 hover:text-red-700"
@@ -612,7 +631,7 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
                 : t("sm_gen")}
       </button>
 
-      {error ? <p className="mt-2 text-[11px] text-red-700 dark:text-red-300">{error}</p> : null}
+      {error ? <p className="mt-2 text-[11px] font-medium text-red-600 dark:text-red-300">{error}</p> : null}
     </div>
   );
 }

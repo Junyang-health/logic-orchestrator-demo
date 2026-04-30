@@ -37,13 +37,13 @@ export function SourceMaterialStoredFilesBlock(props: Props) {
 
   return (
     <div className="mt-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-[var(--mm-text-muted)] dark:text-slate-300">
         <span>
           {t("sm_stored_line", { files: storedFiles.length, n: selectedStoredIds.length })}
         </span>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1 text-[10px]">
-            <span className="text-slate-500">{t("sm_sort_label")}</span>
+          <label className="flex items-center gap-1 text-[10px] font-medium">
+            <span className="text-[var(--mm-text-placeholder)] dark:text-slate-400">{t("sm_sort_label")}</span>
             <select
               className="ios-select max-w-[10rem] py-1 text-[10px]"
               value={sourceSort}
@@ -55,31 +55,36 @@ export function SourceMaterialStoredFilesBlock(props: Props) {
               <option value="origin">{t("sm_sort_origin")}</option>
             </select>
           </label>
-          <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => refreshStoredFiles()}>
+          <button type="button" className="ios-button-ghost px-1 py-0 text-[10px]" onClick={() => refreshStoredFiles()}>
             {t("sm_refresh")}
           </button>
           <button
             type="button"
-            className="text-sky-700 underline"
+            className="ios-button-ghost px-1 py-0 text-[10px]"
             onClick={() => setSelectedStoredIds(storedFiles.map((x) => x.id))}
           >
             {t("review_select_all")}
           </button>
-          <button type="button" className="text-slate-600 underline dark:text-slate-300" onClick={() => setSelectedStoredIds([])}>
+          <button type="button" className="ios-button-ghost px-1 py-0 text-[10px]" onClick={() => setSelectedStoredIds([])}>
             {t("review_clear_selection")}
           </button>
         </div>
       </div>
-      <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("sm_stored_help")}</p>
-      <ul className="mt-1 max-h-40 space-y-1 overflow-auto rounded-xl border border-slate-200 bg-white/60 p-1 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/30">
+      <p className="mt-1 text-[10px] font-medium leading-[1.5] text-[var(--mm-text-placeholder)] dark:text-slate-400">
+        {t("sm_stored_help")}
+      </p>
+      <ul className="mm-sidebar-section mt-1 max-h-40 space-y-1 overflow-auto p-1 dark:border-[var(--mm-border-subtle)] dark:bg-slate-950/30 dark:shadow-none">
         {sortedStoredFiles.map((f) => {
           const checked = selectedStoredIds.includes(f.id);
           const originLabel = f.origin === "llm_ingest" ? t("sm_origin_llm") : t("sm_origin_user");
           return (
-            <li key={f.id} className="flex items-center gap-2 rounded-lg bg-white/80 px-2 py-1.5 text-[11px] dark:bg-slate-900/60">
+            <li
+              key={f.id}
+              className="flex items-center gap-2 rounded-md bg-[color-mix(in_srgb,var(--mm-sidebar-bg)_58%,var(--mm-card-bg))] px-2 py-1.5 text-[11px] dark:bg-slate-900/60"
+            >
               <input
                 type="checkbox"
-                className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="h-3.5 w-3.5 shrink-0 rounded border-[var(--mm-border-subtle)] text-[var(--mm-cta-blue)] focus:ring-[var(--mm-cta-blue)]"
                 checked={checked}
                 onChange={() => {
                   setSelectedStoredIds((prev) =>
@@ -89,7 +94,7 @@ export function SourceMaterialStoredFilesBlock(props: Props) {
                 aria-label={t("sm_include_aria", { name: f.filename })}
               />
               <a
-                className="min-w-0 flex-1 truncate font-medium text-slate-800 underline dark:text-slate-100"
+                className="min-w-0 flex-1 truncate font-medium text-[var(--mm-text-title)] underline dark:text-slate-100"
                 href={`${projectDownloadBase}/${encodeURIComponent(f.id)}`}
                 target="_blank"
                 rel="noreferrer"
@@ -98,13 +103,16 @@ export function SourceMaterialStoredFilesBlock(props: Props) {
               >
                 {f.filename}
               </a>
-              <span className="hidden shrink-0 text-[9px] text-slate-400 sm:inline" title={t("sm_sort_origin")}>
+              <span
+                className="hidden shrink-0 text-[9px] font-medium text-[var(--mm-text-placeholder)] sm:inline"
+                title={t("sm_sort_origin")}
+              >
                 {originLabel}
               </span>
-              <span className="shrink-0 text-slate-500">{formatBytes(f.size)}</span>
+              <span className="mm-hud-mono shrink-0 tabular-nums text-[var(--mm-text-muted)]">{formatBytes(f.size)}</span>
               <button
                 type="button"
-                className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-red-700 shadow-sm backdrop-blur-xl hover:bg-white dark:border-slate-700 dark:bg-slate-950/40 dark:text-red-300 dark:hover:bg-slate-950/60"
+                className="shrink-0 rounded-md border border-[var(--mm-border-subtle)] bg-transparent px-2 py-0.5 text-[10px] font-medium text-[var(--mm-text-muted)] transition hover:border-rose-300/60 hover:text-rose-700 dark:hover:border-rose-500/40 dark:hover:text-rose-300"
                 onClick={async () => {
                   if (!projectId) return;
                   try {

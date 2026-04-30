@@ -30,7 +30,8 @@ Schema:
       "action": "relabel|refine_metadata|split_concept|merge_duplicate|add_missing_bucket|edge_fix",
       "summary": "short",
       "detail": "what to change on the map",
-      "suggested_label": "optional new label text"
+      "suggested_label": "optional new label text",
+      "addresses_gaps": ["gap_1"]
     }
   ]
 }
@@ -38,6 +39,7 @@ Schema:
 Rules:
 - Focus ONLY on the provided level-1 and level-2 child nodes (two hops from the anchor). Do not invent node ids.
 - proposed_modifications: 3–12 items when issues exist; fewer if structure is already strong.
+- Each modification MUST include addresses_gaps: list of one or more gap ids from gaps[].id that this patch fixes (never invent gap ids).
 - target_node_id MUST be one of the provided level-1 or level-2 node ids.
 - target_level is 1 or 2 matching that node.
 - MECE: call out overlaps (same bucket twice) and missing buckets vs the anchor theme.
@@ -184,6 +186,7 @@ def _validate_scan_payload(
         if sev not in ("high", "medium", "low"):
             sev = "medium"
         gaps.append({"id": gid[:48], "description": desc[:1200], "severity": sev})
+    gap_ids_allowed = {g["id"] for g in gaps}
     mods_raw = data.get("proposed_modifications")
     if not isinstance(mods_raw, list) or len(mods_raw) < 1:
         raise ValueError("MECE scan: expected proposed_modifications")
@@ -207,6 +210,22 @@ def _validate_scan_payload(
         action = str(m.get("action") or "relabel").strip()
         if not summary and not detail:
             continue
+        addrs_raw = m.get("addresses_gaps")
+        if not isinstance(addrs_raw, list):
+            addrs_raw = []
+        addresses_gaps = []
+        for x in addrs_raw[:8]:
+            gx = str(x or "").strip()[:48]
+            if gx and gx in gap_ids_allowed:
+                addresses_gaps.append(gx)
+        addresses_gaps = list(dict.fromkeys(addresses_gaps))
+        blob = f"{summary}\n{detail}"
+        if not addresses_gaps:
+            blob_lower = blob.lower()
+            for g in gaps:
+                gid = g["id"]
+                if gid.lower() in blob_lower:
+                    addresses_gaps.append(gid)
         mods.append(
             {
                 "id": mid[:64],
@@ -216,6 +235,7 @@ def _validate_scan_payload(
                 "summary": (summary or detail)[:400],
                 "detail": detail[:2400],
                 "suggested_label": str(m.get("suggested_label") or "").strip()[:400],
+                "addresses_gaps": addresses_gaps,
             }
         )
     if len(mods) < 1:

@@ -1,4 +1,26 @@
+import { FileSpreadsheet, FileText, Image as ImageIcon } from "lucide-react";
+
 type ProjectFileRow = { id: string; filename: string };
+
+function fileChipVisual(filename: string): { Icon: typeof FileText; iconClass: string } {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".pdf")) {
+    return { Icon: FileText, iconClass: "text-red-600 dark:text-red-400" };
+  }
+  if (/\.(doc|docx)$/i.test(lower)) {
+    return { Icon: FileText, iconClass: "text-blue-600 dark:text-blue-400" };
+  }
+  if (/\.(xls|xlsx|csv)$/i.test(lower)) {
+    return { Icon: FileSpreadsheet, iconClass: "text-emerald-600 dark:text-emerald-400" };
+  }
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(lower)) {
+    return { Icon: ImageIcon, iconClass: "text-violet-600 dark:text-violet-400" };
+  }
+  if (/\.(md|txt|markdown|rtf)$/i.test(lower)) {
+    return { Icon: FileText, iconClass: "text-slate-600 dark:text-slate-400" };
+  }
+  return { Icon: FileText, iconClass: "text-slate-500 dark:text-slate-400" };
+}
 
 type Props = {
   sessionLabel: string;
@@ -61,11 +83,27 @@ export default function AssistantSessionSourcesCard({
   selectedSourceFileIds,
   onSelectedSourceFileIdsChange
 }: Props) {
+  const toggleFile = (id: string, checked: boolean) => {
+    if (checked) {
+      if (selectedSourceFileIds.includes(id)) return;
+      onSelectedSourceFileIdsChange([...selectedSourceFileIds, id]);
+    } else {
+      onSelectedSourceFileIdsChange(selectedSourceFileIds.filter((x) => x !== id));
+    }
+  };
+
   return (
-    <div className="ios-card p-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{sessionLabel}</div>
+    <div className="space-y-4">
+      <div className="text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+        {sessionLabel}
+      </div>
       <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-200">
-        {targetNodeLabel} <span className="font-mono">{selectedNodeId ?? "—"}</span>
+        {targetNodeLabel}{" "}
+        {selectedNodeId ? (
+          <code className="mm-assistant-code-pill">{selectedNodeId}</code>
+        ) : (
+          <code className="mm-assistant-code-pill opacity-70">—</code>
+        )}
       </div>
       <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{sandboxHint}</div>
       {skillsWebSearch && (
@@ -124,27 +162,29 @@ export default function AssistantSessionSourcesCard({
                 {selectNoSources}
               </button>
             </div>
-            <label className="mt-1.5 block">
-              <span className="sr-only">{sourceFilesLabel}</span>
-              <select
-                multiple
-                size={Math.min(8, Math.max(3, projectFiles.length))}
-                className="w-full max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-800 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                value={selectedSourceFileIds}
-                onChange={(e) => {
-                  const next = Array.from(e.target.selectedOptions, (o) => o.value);
-                  onSelectedSourceFileIdsChange(next);
-                }}
-                aria-label={sourceFilesLabel}
-              >
-                {projectFiles.map((f) => (
-                  <option key={f.id} value={f.id} title={f.filename}>
-                    {f.filename}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{selectionCount(selectedSourceFileIds.length)}</p>
+            <ul className="mt-2 flex flex-col gap-1.5" aria-label={sourceFilesLabel}>
+              {projectFiles.map((f) => {
+                const checked = selectedSourceFileIds.includes(f.id);
+                const { Icon, iconClass } = fileChipVisual(f.filename);
+                return (
+                  <li key={f.id}>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200/90 bg-white/95 px-2 py-1.5 shadow-sm transition hover:border-slate-300/90 dark:border-slate-600/70 dark:bg-slate-900/55 dark:hover:border-slate-500/80">
+                      <input
+                        type="checkbox"
+                        className="shrink-0 rounded border-slate-300 text-sky-600 dark:border-slate-600"
+                        checked={checked}
+                        onChange={(e) => toggleFile(f.id, e.target.checked)}
+                      />
+                      <Icon className={`h-3.5 w-3.5 shrink-0 ${iconClass}`} aria-hidden />
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-800 dark:text-slate-100" title={f.filename}>
+                        {f.filename}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400">{selectionCount(selectedSourceFileIds.length)}</p>
           </>
         )}
       </div>

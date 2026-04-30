@@ -1,5 +1,14 @@
 import type { Graph, Node } from "@antv/x6";
-import { AlertTriangle, ChevronDown, ChevronRight, FileWarning, MessageCircle, MoveRight, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  FileWarning,
+  MoveRight,
+  Plus,
+  Trash2
+} from "lucide-react";
 import { useLayoutEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/useI18n";
 import { combineGraphs } from "../lib/graphBranch";
@@ -14,7 +23,9 @@ import { REVIEW_COMMENT_COUNT_DATA_KEY } from "../lib/syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
 
 const NODE_W = 280;
-const LABEL_VIEWPORT_MAX = 300;
+const NODE_MIN_H = 40;
+/** Extra px so X6 `foreignObject` height clears content (rounding) and hover action row stays inside the rounded card. */
+const NODE_MEASURE_SLACK = 28;
 
 /** Graph uses lowercase `evidence` | `inferred` (legacy graphs may still carry older type strings). */
 function isEvidenceType(type?: string) {
@@ -39,17 +50,12 @@ function isRootHub(metadata: Record<string, unknown>) {
   return v === true || v === "true" || v === 1;
 }
 
-function nodeSurfaceClass(type?: string) {
-  return isEvidenceType(type) ? "mm-node-surface-evidence" : "mm-node-surface-inferred";
-}
-
-/** Status rings on top of evidence vs inferred fill. */
 function nodeStatusRing(status?: string, opts?: { hasFactsCollision?: boolean }) {
   if (status === "conflict")
     return "ring-2 ring-rose-200/90 dark:ring-rose-400/60";
   if (opts?.hasFactsCollision) return "ring-2 ring-violet-200/80 dark:ring-violet-400/55";
   if (status === "unstable") return "ring-2 ring-amber-200/80 dark:ring-amber-400/55";
-  if (status === "draft") return "ring-1 ring-dashed ring-white/50";
+  if (status === "draft") return "ring-1 ring-dashed ring-slate-300 dark:ring-white/50";
   return "";
 }
 
@@ -94,12 +100,13 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
   const startReparent = useUiStore((s) => s.startReparent);
   const sourceFileCount = useUiStore((s) => s.sourceFiles.length);
   const projectSelectedFileIdCount = useUiStore((s) => s.projectSelectedFileIds.length);
+  const selectedNodeId = useUiStore((s) => s.selectedNode?.id ?? null);
   const [collisionOpen, setCollisionOpen] = useState<null | "logic" | "facts">(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const collisionRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
-  const subtreeRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const riskRef = useRef<HTMLDivElement>(null);
   const valuesRef = useRef<HTMLDivElement>(null);
@@ -228,23 +235,23 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
       (status === "unstable" && (violationSummary.length > 0 || inferredConsequences.length > 0))) &&
     !hasLogicCollisionChip;
 
+  const idDisplay =
+    id.length > 13 ? `${id.slice(0, 11)}…` : id;
+  const isCanvasSelected = Boolean(id && selectedNodeId === id);
+
   useLayoutEffect(() => {
     const n = props.node;
     if (!n?.isNode?.()) return;
-
-    const riskH = riskRef.current?.offsetHeight ?? 0;
-    const valuesH = valuesRef.current?.offsetHeight ?? 0;
-    const collisionH = collisionRef.current?.offsetHeight ?? 0;
-    const chipsH = chipsRef.current?.offsetHeight ?? 28;
-    const subtreeH = subtreeRef.current?.offsetHeight ?? 0;
-    const actionsH = actionsRef.current?.offsetHeight ?? 0;
-    const rawLabelH = scrollRef.current?.scrollHeight ?? 0;
-    const labelViewport = Math.min(LABEL_VIEWPORT_MAX, Math.max(36, rawLabelH));
-    const verticalPad = 18;
-    const nextH = Math.min(
-      520,
-      Math.max(96, riskH + valuesH + collisionH + labelViewport + chipsH + subtreeH + actionsH + verticalPad)
-    );
+    const el = surfaceRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const actionsEl = actionsRef.current;
+    let h = Math.ceil(rect.height);
+    if (actionsEl) {
+      const ab = actionsEl.getBoundingClientRect().bottom;
+      h = Math.max(h, Math.ceil(ab - rect.top));
+    }
+    const nextH = Math.min(520, Math.max(NODE_MIN_H, h + NODE_MEASURE_SLACK));
     const cur = n.getSize();
     if (Math.abs(cur.height - nextH) > 2 || Math.abs(cur.width - NODE_W) > 2) {
       n.resize(NODE_W, nextH);
@@ -268,41 +275,23 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
     hiddenDescendantCount,
     showCollisionRow,
     collisionOpen,
-    hasFactsCollision
+    hasFactsCollision,
+    isCanvasSelected
   ]);
 
   return (
-    <div className="relative h-full w-full">
-      <button
-        type="button"
-        className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/35 bg-white/20 text-white shadow-pastel hover:bg-white/30"
-        title={t("node_assistant_open")}
-        onClick={openAssistantForBranch}
-        aria-label={t("node_assistant_open")}
-      >
-        <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.25} />
-      </button>
-      {reviewCommentCount > 0 ? (
-        <button
-          type="button"
-          className="absolute -right-1 -top-1 z-10 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-amber-200/50 bg-amber-300/95 px-1 text-[11px] text-amber-950 shadow-pastel hover:bg-amber-200"
-          title={t("node_reviewer_comments")}
-          onClick={(e) => {
-            e.stopPropagation();
-            setReviewFocusNodeId(id);
-            setActivePanel("review");
-          }}
-        >
-          <span aria-hidden>💬</span>
-          <span className="ml-0.5 font-semibold tabular-nums">{reviewCommentCount}</span>
-        </button>
-      ) : null}
+    <div className="group/mmnode flex h-full min-h-0 w-full flex-col justify-start">
       <div
+        ref={surfaceRef}
         className={[
-          `${nodeSurfaceClass(type)} flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden px-3 py-2.5`,
+          `mm-node-surface relative flex w-full min-w-0 flex-col self-start overflow-hidden px-4 pb-6 pt-5`,
+          isEvidenceType(type) ? "mm-node-kind-evidence" : "",
+          isCanvasSelected ? "ring-2 ring-[color-mix(in_srgb,var(--mm-accent)_58%,transparent)]" : "",
           nodeStatusRing(status, { hasFactsCollision }),
           reparentingNodeId === id ? "ring-2 ring-amber-200/90 dark:ring-amber-300/70" : ""
-        ].join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={(e) => {
           e.stopPropagation();
           setSelectedNode({
@@ -316,33 +305,66 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
           setActivePanel(isEvidenceType(type) ? "review" : "source");
         }}
       >
+        <button
+          type="button"
+          className={[
+            "absolute left-1 top-3 z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent p-0 opacity-55 transition-[opacity,background-color] hover:bg-black/[0.06] hover:opacity-100 dark:hover:bg-white/[0.08] group-hover/mmnode:opacity-90",
+            isEvidenceType(type)
+              ? "text-[var(--mm-node-rail-evidence)]"
+              : "text-[var(--mm-node-rail-inferred)]"
+          ].join(" ")}
+          title={t("node_assistant_open")}
+          aria-label={t("node_assistant_open")}
+          onClick={(e) => {
+            e.stopPropagation();
+            openAssistantForBranch(e);
+          }}
+        >
+          <Bot className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+        </button>
+        {reviewCommentCount > 0 ? (
+          <button
+            type="button"
+            className="absolute right-3.5 top-4 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-md border border-amber-200/40 bg-amber-200/25 px-0.5 text-[9px] font-medium tabular-nums text-amber-900 opacity-90 hover:opacity-100 dark:border-amber-400/25 dark:bg-amber-400/12 dark:text-amber-100"
+            title={t("node_reviewer_comments")}
+            onClick={(e) => {
+              e.stopPropagation();
+              setReviewFocusNodeId(id);
+              setActivePanel("review");
+            }}
+          >
+            <span aria-hidden>💬</span>
+            <span className="ml-0.5">{reviewCommentCount}</span>
+          </button>
+        ) : null}
+
         {showRiskPanel ? (
           <div
             ref={riskRef}
             data-conflict-alert
             className={[
-              "mb-2 shrink-0 rounded-2xl border px-2 py-1.5 text-[10px] leading-snug",
+              "mb-1.5 shrink-0 rounded-xl border px-2.5 py-1.5 text-[11px] leading-snug",
               status === "conflict"
-                ? "border-rose-300/60 bg-black/30 text-rose-50"
-                : "border-amber-300/50 bg-black/25 text-amber-50"
+                ? "border-rose-200 bg-rose-50/95 text-rose-900 dark:border-rose-300/60 dark:bg-black/30 dark:text-rose-50"
+                : "border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-300/50 dark:bg-black/25 dark:text-amber-50"
             ].join(" ")}
           >
             <div
               className={
                 status === "conflict"
-                  ? "font-semibold uppercase tracking-wide text-rose-100"
-                  : "font-semibold uppercase tracking-wide text-amber-100"
+                  ? "font-semibold uppercase tracking-wide text-rose-800 dark:text-rose-100"
+                  : "font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-100"
               }
             >
               {status === "conflict" ? t("node_logic_conflict") : t("node_downstream_risk")}
             </div>
             {violationSummary ? (
-              <div className="mt-1 whitespace-pre-wrap break-words text-white/95">
+              <div className="mt-1 whitespace-pre-wrap break-words normal-case text-rose-900/95 dark:text-rose-50/95">
                 {violationSummary}
               </div>
             ) : null}
             {upstreamConflict && status === "unstable" ? (
-              <div className="mt-1 text-[9px] text-amber-100/90">
+              <div className="mt-1 text-[8px] normal-case text-amber-800/90 dark:text-amber-100/90">
                 <span className="font-semibold">{t("node_upstream")} </span>
                 {upstreamConflict}
               </div>
@@ -351,7 +373,9 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
               <>
                 <div
                   className={
-                    status === "conflict" ? "mt-2 font-semibold text-rose-100" : "mt-2 font-semibold text-amber-100"
+                    status === "conflict"
+                      ? "mt-1.5 font-semibold text-rose-800 dark:text-rose-100"
+                      : "mt-1.5 font-semibold text-amber-800 dark:text-amber-100"
                   }
                 >
                   {t("node_inferred_consequences")}
@@ -359,8 +383,8 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
                 <div
                   className={
                     status === "conflict"
-                      ? "mt-0.5 whitespace-pre-wrap break-words text-rose-50"
-                      : "mt-0.5 whitespace-pre-wrap break-words text-amber-50"
+                      ? "mt-0.5 whitespace-pre-wrap break-words normal-case text-rose-900 dark:text-rose-50"
+                      : "mt-0.5 whitespace-pre-wrap break-words normal-case text-amber-900 dark:text-amber-50"
                   }
                 >
                   {inferredConsequences}
@@ -370,31 +394,103 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
           </div>
         ) : null}
 
+        <div
+          className={["flex shrink-0 items-start gap-1.5 pl-9", reviewCommentCount > 0 ? "pr-10" : "pr-2"].join(" ")}
+        >
+          <div
+            ref={scrollRef}
+            className="min-w-0 flex-1 overflow-hidden py-1.5 text-[15px] font-medium leading-[1.55] tracking-tight text-[var(--mm-node-text)] [overflow-wrap:anywhere]"
+          >
+            <span className="block whitespace-pre-wrap break-words">{label || t("node_untitled")}</span>
+          </div>
+          {hasOutgoingChildren && id ? (
+            <button
+              type="button"
+              className="mt-0.5 shrink-0 rounded-md p-0.5 text-[var(--mm-node-text-muted)] opacity-50 transition hover:bg-black/[0.04] hover:opacity-100 dark:hover:bg-white/[0.06]"
+              title={isSubtreeCollapsed ? t("node_subtree_expand_n", { n: hiddenDescendantCount }) : t("node_subtree_fold")}
+              aria-label={
+                isSubtreeCollapsed
+                  ? t("node_subtree_expand_n", { n: hiddenDescendantCount })
+                  : t("node_subtree_fold")
+              }
+              aria-pressed={isSubtreeCollapsed}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapsedSubtree(id);
+              }}
+            >
+              {isSubtreeCollapsed ? (
+                <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+              ) : (
+                <ChevronDown className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+              )}
+            </button>
+          ) : null}
+        </div>
+
+        <div ref={chipsRef} className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 pl-9 pr-2 text-left">
+          <span className="mm-node-meta-muted max-w-[7.5rem] shrink-0 truncate tabular-nums" title={id}>
+            {idDisplay}
+          </span>
+          <span className="mm-node-meta-muted select-none opacity-50" aria-hidden>
+            ·
+          </span>
+          {isEvidenceType(type) ? (
+            <span className="shrink-0 rounded-full bg-emerald-500/[0.14] px-2.5 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300">
+              {type || t("node_type_none")}
+            </span>
+          ) : (
+            <span className="mm-node-meta-muted shrink-0">
+              {rootHub && isInferredType(type) ? t("node_root_inferred") : type || t("node_type_none")}
+            </span>
+          )}
+          {status === "conflict" ? (
+            <span className="shrink-0 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+              {t("node_status_conflict")}
+            </span>
+          ) : status === "unstable" ? (
+            <span className="shrink-0 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              {t("node_status_affected")}
+            </span>
+          ) : (
+            <span className="mm-node-meta-muted shrink-0 tabular-nums">
+              {status === "firm" ? t("type_firm") : status === "draft" ? t("type_draft") : status}
+            </span>
+          )}
+          {isNewHighlighted ? (
+            <>
+              <span className="mm-node-meta-muted select-none opacity-50" aria-hidden>
+                ·
+              </span>
+              <span
+                role="status"
+                title={t("node_badge_new_tooltip")}
+                className="mm-node-badge-new shrink-0"
+              >
+                {t("node_badge_new")}
+              </span>
+            </>
+          ) : null}
+        </div>
+
         {criticalPairs.length > 0 ? (
           <div
             ref={valuesRef}
-            className="mb-2 shrink-0 rounded-2xl border border-white/20 bg-white/10 px-2 py-1.5 backdrop-blur-sm"
+            className="mt-2 shrink-0 border-t border-[var(--mm-node-divider)] pt-1.5 text-left"
           >
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-white/90">
+            <div className="mm-node-meta-muted text-[10px] font-semibold uppercase tracking-wide">
               {t("node_critical_data")}
             </div>
-            <ul className="mt-1 list-none space-y-1.5 p-0">
+            <ul className="mt-1 list-none space-y-1 p-0">
               {criticalPairs.map((row, i) => (
-                <li key={i} className="text-[10px] leading-snug text-white/95">
-                  <span className="font-semibold text-white">{row.label}:</span>{" "}
-                  <span className="break-words font-medium text-white/90">{row.value}</span>
+                <li key={i} className="text-xs leading-relaxed text-[var(--mm-node-text)]">
+                  <span className="mm-node-meta-muted font-medium">{row.label}:</span>{" "}
+                  <span className="break-words font-normal text-[var(--mm-node-text)]">{row.value}</span>
                 </li>
               ))}
             </ul>
           </div>
         ) : null}
-
-        <div
-          ref={scrollRef}
-          className="min-h-0 max-h-[300px] min-w-0 flex-1 overflow-y-auto overflow-x-hidden text-xs font-semibold leading-snug text-white"
-        >
-          <span className="block whitespace-pre-wrap break-words">{label || t("node_untitled")}</span>
-        </div>
 
         {showCollisionRow ? (
           <div
@@ -414,10 +510,10 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
                     key={c.kind}
                     type="button"
                     className={[
-                      "inline-flex max-w-full items-center gap-0.5 rounded-lg border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                      "mm-hud-mono inline-flex max-w-full items-center gap-0.5 rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide",
                       c.kind === "logic"
-                        ? "border-rose-200/50 bg-rose-500/45 text-rose-50"
-                        : "border-violet-200/50 bg-violet-600/50 text-violet-50"
+                        ? "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-200/50 dark:bg-rose-500/45 dark:text-rose-50"
+                        : "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-200/50 dark:bg-violet-600/50 dark:text-violet-50"
                     ].join(" ")}
                     aria-expanded={open}
                     onClick={(e) => {
@@ -426,9 +522,9 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
                     }}
                   >
                     {c.kind === "logic" ? (
-                      <AlertTriangle className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+                      <AlertTriangle className="h-2.5 w-2.5 shrink-0 opacity-90" aria-hidden />
                     ) : (
-                      <FileWarning className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+                      <FileWarning className="h-2.5 w-2.5 shrink-0 opacity-90" aria-hidden />
                     )}
                     {c.kind === "logic" ? t("node_collision_chip_logic") : t("node_collision_chip_facts")}
                   </button>
@@ -436,34 +532,38 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
               })}
             </div>
             {collisionOpen === "logic" && hasLogicCollisionChip ? (
-              <div className="mt-1 rounded-lg border border-rose-200/40 bg-black/40 px-2 py-1.5 text-[9px] leading-snug text-rose-50">
+              <div className="mm-hud-mono mt-1 rounded border border-rose-200 bg-rose-50/95 px-2 py-1 text-[8px] leading-snug text-rose-900 dark:border-rose-200/40 dark:bg-black/40 dark:text-rose-50">
                 {collisionChips
                   .filter((x) => x.kind === "logic")
                   .map((c, i) => (
-                    <p key={i} className="whitespace-pre-wrap break-words">
+                    <p key={i} className="whitespace-pre-wrap break-words normal-case">
                       {c.summary}
                     </p>
                   ))}
                 {upstreamConflict && status === "unstable" ? (
-                  <p className="mt-1.5 text-[8.5px] text-rose-100/90">
+                  <p className="mt-1 text-[8px] normal-case text-rose-800/90 dark:text-rose-100/90">
                     <span className="font-semibold">{t("node_upstream")} </span>
                     {upstreamConflict}
                   </p>
                 ) : null}
                 {inferredConsequences ? (
                   <>
-                    <p className="mt-1.5 font-semibold text-rose-100">{t("node_inferred_consequences")}</p>
-                    <p className="mt-0.5 whitespace-pre-wrap break-words text-rose-100/90">{inferredConsequences}</p>
+                    <p className="mt-1 font-semibold normal-case text-rose-800 dark:text-rose-100">
+                      {t("node_inferred_consequences")}
+                    </p>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words normal-case text-rose-900/90 dark:text-rose-100/90">
+                      {inferredConsequences}
+                    </p>
                   </>
                 ) : null}
               </div>
             ) : null}
             {collisionOpen === "facts" ? (
-              <div className="mt-1 rounded-lg border border-violet-200/40 bg-black/40 px-2 py-1.5 text-[9px] leading-snug text-violet-50">
+              <div className="mm-hud-mono mt-1 rounded border border-violet-200 bg-violet-50/95 px-2 py-1 text-[8px] leading-snug text-violet-900 dark:border-violet-200/40 dark:bg-black/40 dark:text-violet-50">
                 {collisionChips
                   .filter((x) => x.kind === "facts")
                   .map((c, i) => (
-                    <p key={i} className="whitespace-pre-wrap break-words">
+                    <p key={i} className="whitespace-pre-wrap break-words normal-case">
                       {c.summary}
                     </p>
                   ))}
@@ -473,103 +573,40 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
         ) : null}
 
         <div
-          ref={chipsRef}
-          className="mt-1 flex shrink-0 flex-wrap items-center gap-2 border-t border-white/20 pt-1"
-        >
-          <span className="inline-flex items-center rounded-full border border-white/35 bg-white/15 px-2 py-0.5 text-[10px] font-medium text-white">
-            {rootHub && isInferredType(type) ? t("node_root_inferred") : type || t("node_type_none")}
-          </span>
-          {status === "conflict" ? (
-            <span className="rounded-full border border-rose-200/50 bg-rose-500/50 px-2 py-0.5 text-[10px] font-semibold text-white">
-              {t("node_status_conflict")}
-            </span>
-          ) : status === "unstable" ? (
-            <span className="rounded-full border border-amber-200/50 bg-amber-400/50 px-2 py-0.5 text-[10px] font-semibold text-amber-950">
-              {t("node_status_affected")}
-            </span>
-          ) : (
-            <span className="text-[11px] text-white/75">
-              {status === "firm" ? t("type_firm") : status === "draft" ? t("type_draft") : status}
-            </span>
-          )}
-          {isNewHighlighted ? (
-            <span className="rounded-full border border-lime-200/50 bg-lime-300/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-50">
-              {t("node_badge_new")}
-            </span>
-          ) : null}
-        </div>
-
-        {hasOutgoingChildren && id ? (
-          <div
-            ref={subtreeRef}
-            className="mt-0.5 shrink-0 border-t border-white/20 pt-1"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/35 bg-white/12 px-2 py-1.5 text-center text-[10px] font-semibold leading-tight text-white shadow-sm hover:bg-white/22"
-              title={isSubtreeCollapsed ? t("node_subtree_expand_n", { n: hiddenDescendantCount }) : t("node_subtree_fold")}
-              aria-label={
-                isSubtreeCollapsed
-                  ? t("node_subtree_expand_n", { n: hiddenDescendantCount })
-                  : t("node_subtree_fold")
-              }
-              aria-pressed={isSubtreeCollapsed}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleCollapsedSubtree(id);
-              }}
-            >
-              {isSubtreeCollapsed ? (
-                <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
-              )}
-              <span>
-                {isSubtreeCollapsed
-                  ? t("node_subtree_expand_n", { n: hiddenDescendantCount })
-                  : t("node_subtree_fold")}
-              </span>
-            </button>
-          </div>
-        ) : null}
-
-        <div
           ref={actionsRef}
-          className="mt-0.5 flex shrink-0 items-center justify-end gap-0.5 border-t border-white/20 pt-1"
+          className="mt-1.5 flex min-h-[1.75rem] shrink-0 items-center justify-end gap-0.5 pr-1 opacity-0 transition-opacity duration-150 pointer-events-none group-hover/mmnode:pointer-events-auto group-hover/mmnode:opacity-100 group-focus-within/mmnode:pointer-events-auto group-focus-within/mmnode:opacity-100"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             disabled={!graph}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white shadow-sm hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-[var(--mm-node-border-outer)] bg-white/25 text-[var(--mm-node-text)] shadow-sm hover:bg-white/40 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/[0.06] dark:hover:bg-white/[0.12]"
             title={t("node_add_child")}
             aria-label={t("node_add_child")}
             onClick={onAddChild}
           >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+            <Plus className="h-3 w-3" strokeWidth={2.25} />
           </button>
           <button
             type="button"
             disabled={!graph}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white shadow-sm hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-[var(--mm-node-border-outer)] bg-white/25 text-[var(--mm-node-text)] shadow-sm hover:bg-white/40 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/[0.06] dark:hover:bg-white/[0.12]"
             title={t("node_move_reparent")}
             aria-label={t("node_move_reparent")}
             onClick={onMoveReparent}
           >
-            <MoveRight className="h-3.5 w-3.5" strokeWidth={2.25} />
+            <MoveRight className="h-3 w-3" strokeWidth={2.25} />
           </button>
           <button
             type="button"
             disabled={!graph}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/50 bg-rose-500/30 text-rose-50 shadow-sm hover:bg-rose-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-rose-300/35 bg-rose-500/[0.12] text-rose-700 shadow-sm hover:bg-rose-500/[0.2] disabled:cursor-not-allowed disabled:opacity-40 dark:border-rose-400/25 dark:bg-rose-500/20 dark:text-rose-200 dark:hover:bg-rose-500/30"
             title={t("node_delete")}
             aria-label={t("node_delete")}
             onClick={onDeleteNode}
           >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+            <Trash2 className="h-3 w-3" strokeWidth={2.25} />
           </button>
         </div>
       </div>

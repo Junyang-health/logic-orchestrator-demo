@@ -5,7 +5,9 @@ import { dedupeMindmapGraph } from "./graphBranch";
 import { normalizeMindmapNodeType } from "./normalizeMindmapNodeType";
 import { applyReviewCommentBadgesToGraph } from "./syncReviewCommentBadges";
 import useUiStore from "../store/useUiStore";
+import { mmEdgeLabelBlock } from "./mmEdgeLabel";
 import { applyDagreLayout } from "./x6CanvasGraphUtils";
+import { applyGraphEdgeTheme } from "./x6EdgeTheme";
 
 export type LoadMindmapIntoGraphCtx = {
   layoutEpochRef: MutableRefObject<number>;
@@ -48,7 +50,7 @@ export function loadMindmapIntoGraph(
       id: n.id,
       shape: "mindmap-react-node",
       width: 280,
-      height: 96,
+      height: 72,
       data: {
         id: n.id,
         type: normalizeMindmapNodeType(n.type),
@@ -70,24 +72,7 @@ export function loadMindmapIntoGraph(
     seenEdgeKeys.add(ek);
     const isDraft = (e.status ?? "firm") === "draft";
     const stroke = isDraft ? "var(--mm-edge-line-draft)" : "var(--mm-edge-line-firm)";
-    const labelBlock = e.label
-      ? [
-          {
-            attrs: {
-              text: {
-                text: e.label,
-                fill: isDraft ? "var(--mm-edge-label-text-draft)" : "var(--mm-edge-label-text-firm)",
-                fontSize: 11
-              },
-              rect: {
-                fill: "var(--mm-edge-label-pill-fill)",
-                stroke: "var(--mm-edge-label-pill-stroke)",
-                strokeWidth: 1
-              }
-            }
-          }
-        ]
-      : undefined;
+    const labelBlock = e.label ? [mmEdgeLabelBlock(e.label, isDraft)] : undefined;
     graph.addEdge({
       source: { cell: e.source },
       target: { cell: e.target },
@@ -95,12 +80,15 @@ export function loadMindmapIntoGraph(
       attrs: {
         line: {
           stroke,
-          strokeWidth: 1.5,
+          strokeWidth: 1.75,
           strokeDasharray: isDraft ? "6 4" : ""
         }
       }
     });
   }
+
+  const chromeTheme = useUiStore.getState().theme === "dark" ? "dark" : "light";
+  applyGraphEdgeTheme(graph, chromeTheme);
 
   applyReviewCommentBadgesToGraph(graph, useUiStore.getState().reviewComments, {
     muteValidationRef: reviewBadgeMuteValidationRef

@@ -65,7 +65,7 @@ export default function App() {
 
   return (
     <SessionSetupGate backendBase={backendBase}>
-      <div className="relative h-screen w-screen overflow-hidden text-slate-900 dark:text-slate-100">
+      <div className="relative h-screen w-screen overflow-hidden bg-[var(--mm-bg-app)] text-[var(--mm-text-title)]">
       <ThemeDocumentSync />
       <ProjectLandingOverlay backendBase={backendBase} />
       <ClosedDockRevealTabs />
@@ -83,7 +83,7 @@ export default function App() {
       ) : null}
 
       <div className="flex h-full w-full">
-        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r ios-divider">
+        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r border-[var(--mm-border-subtle)] bg-[var(--mm-bg-app)]">
           <AssistantAndCanvasRow>
             <X6Canvas {...canvasProps} onGraphReady={setGraph} />
             {assistantOverlayOpen ? <AssistantOverlay /> : null}

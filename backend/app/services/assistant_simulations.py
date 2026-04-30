@@ -684,3 +684,138 @@ def black_swan_apply_mitigations_patch(
     )
     return merged, report
 
+
+OPTIMISM_BASELINE_EXPLAIN_SYSTEM = """You explain how financial baselines (TAM / SOM / ARR) are wired for an optimism meter in a strategy mindmap branch.
+
+The application uses these deterministic rules (must stay consistent with your explanation):
+- SOM: if both tam_total and target_segment_pct (0–100) are present, SOM = tam_total × (target_segment_pct / 100).
+  Otherwise, if baseline_som_override is present, SOM = baseline_som_override.
+- ARR: if customers_total, penetration_pct (0–100), and arpa_year are all present,
+  ARR = customers_total × (penetration_pct / 100) × arpa_year.
+  Else if SOM is known and penetration_pct is present and arpa_year is absent, ARR = SOM × (penetration_pct / 100).
+- TAM equals tam_total when provided.
+
+You receive JSON with branch nodes (id, label, type, critical_values) plus the meter inputs and derived TAM/SOM/ARR already computed by the app.
+
+Tasks:
+1) Summarize in plain language how the CURRENT numbers relate to branch evidence (labels + critical_values). Cite node ids when possible.
+2) List computation_steps as short strings in order (e.g. "TAM = … from node X", "SOM = TAM × segment%").
+3) For each non-null driver field among tam_total, target_segment_pct, baseline_som_override, customers_total, penetration_pct, arpa_year, give a driver_notes entry: field (exact key), note (1–2 sentences), evidence_node_id when traceable else null.
+4) caveats: missing drivers, conflicting figures, or ambiguity.
+5) confidence: one of "high", "medium", "low".
+
+Return JSON only. No markdown. Schema:
+{
+  "summary": "string",
+  "computation_steps": ["string"],
+  "driver_notes": [{"field": "tam_total", "note": "string", "evidence_node_id": "id or null"}],
+  "caveats": ["string"],
+  "confidence": "medium"
+}
+"""
+
+
+def _compact_branch_for_optimism_explain(
+    *,
+    branch_root_id: str,
+    full_nodes: list[dict[str, Any]],
+    full_edges: list[dict[str, Any]],
+    max_nodes: int = 96,
+) -> list[dict[str, Any]]:
+    all_ids = {str(n.get("id")) for n in full_nodes if isinstance(n, dict) and n.get("id")}
+    edges_raw = [e for e in full_edges if isinstance(e, dict)]
+    branch_ids = collect_branch_node_ids(root_id=branch_root_id, edges=edges_raw, all_ids=all_ids)
+    out: list[dict[str, Any]] = []
+    for n in full_nodes:
+        if not isinstance(n, dict):
+            continue
+        nid = str(n.get("id") or "")
+        if nid not in branch_ids:
+            continue
+        md = n.get("metadata") if isinstance(n.get("metadata"), dict) else {}
+        cv = md.get("critical_values")
+        out.append(
+            {
+                "id": nid,
+                "label": str(n.get("label") or "")[:520],
+                "type": n.get("type"),
+                "critical_values": cv if isinstance(cv, list) else [],
+            }
+        )
+        if len(out) >= max_nodes:
+            break
+    return out
+
+
+def run_optimism_baseline_explain(
+    *,
+    llm: LlmClient,
+    branch_root_id: str,
+    full_nodes: list[dict[str, Any]],
+    full_edges: list[dict[str, Any]],
+    currency: str,
+    meter: dict[str, Any],
+    derived_tam: float | None,
+    derived_som: float | None,
+    derived_arr: float | None,
+) -> dict[str, Any]:
+    nodes_compact = _compact_branch_for_optimism_explain(
+        branch_root_id=branch_root_id, full_nodes=full_nodes, full_edges=full_edges
+    )
+    blob = {
+        "branch_root_id": branch_root_id,
+        "currency": (currency or "USD").upper(),
+        "meter_inputs": {k: v for k, v in meter.items() if v is not None},
+        "derived_baseline": {"TAM": derived_tam, "SOM": derived_som, "ARR": derived_arr},
+        "nodes": nodes_compact,
+    }
+    raw_json = json.dumps(blob, ensure_ascii=False)
+    user_prompt = (
+        "Analyze this optimism baseline snapshot (JSON). Ground your answer in the listed nodes.\n\n" + raw_json
+    )
+    if len(user_prompt) > 28000:
+        user_prompt = user_prompt[:28000] + "\n…(truncated)"
+
+    data = llm.generate_json(system=OPTIMISM_BASELINE_EXPLAIN_SYSTEM, user=user_prompt)
+    if not isinstance(data, dict):
+        return {
+            "summary": str(data or "").strip(),
+            "computation_steps": [],
+            "driver_notes": [],
+            "caveats": [],
+            "confidence": "low",
+        }
+
+    summary = str(data.get("summary") or "").strip()
+    steps_raw = data.get("computation_steps") if isinstance(data.get("computation_steps"), list) else data.get("steps")
+    if not isinstance(steps_raw, list):
+        steps_raw = []
+    computation_steps = [str(s).strip() for s in steps_raw if str(s).strip()][:32]
+
+    notes_out: list[dict[str, Any]] = []
+    dn = data.get("driver_notes") if isinstance(data.get("driver_notes"), list) else data.get("drivers")
+    if isinstance(dn, list):
+        for item in dn[:24]:
+            if not isinstance(item, dict):
+                continue
+            fld = str(item.get("field") or item.get("key") or "").strip()[:64]
+            note = str(item.get("note") or item.get("detail") or "").strip()[:2000]
+            eid = item.get("evidence_node_id")
+            eid_s = str(eid).strip()[:128] if eid else None
+            if fld or note:
+                notes_out.append({"field": fld, "note": note, "evidence_node_id": eid_s})
+
+    caveats_raw = data.get("caveats") if isinstance(data.get("caveats"), list) else []
+    caveats = [str(c).strip() for c in caveats_raw if str(c).strip()][:16] if isinstance(caveats_raw, list) else []
+
+    conf = str(data.get("confidence") or "medium").strip().lower()
+    if conf not in ("high", "medium", "low"):
+        conf = "medium"
+
+    return {
+        "summary": summary or "No summary returned by the model.",
+        "computation_steps": computation_steps,
+        "driver_notes": notes_out,
+        "caveats": caveats,
+        "confidence": conf,
+    }

@@ -1,5 +1,6 @@
 import type { Graph } from "@antv/x6";
 import useUiStore from "../store/useUiStore";
+import { mmEdgeLabelBlock } from "./mmEdgeLabel";
 
 type AddChildOptions = {
   typeRaw: string;
@@ -31,7 +32,7 @@ export function addChildToParent(graph: Graph, parentId: string, opts: AddChildO
     id,
     shape: "mindmap-react-node",
     width: 280,
-    height: 96,
+    height: 72,
     x: p.x + 260,
     y: p.y,
     data: { id, type, label, metadata: {}, status }
@@ -40,17 +41,11 @@ export function addChildToParent(graph: Graph, parentId: string, opts: AddChildO
   graph.addEdge({
     source: parentId,
     target: node.id,
-    labels: edgeLabel
-      ? [
-          {
-            attrs: { label: { text: edgeLabel, fill: isSandbox ? "#64748b" : "#0f172a", fontSize: 11 } }
-          }
-        ]
-      : undefined,
+    labels: edgeLabel ? [mmEdgeLabelBlock(edgeLabel, isSandbox)] : undefined,
     attrs: {
       line: {
-        stroke: isSandbox ? "#94a3b8" : "#0f172a",
-        strokeWidth: 1.5,
+        stroke: isSandbox ? "var(--mm-edge-line-draft)" : "var(--mm-edge-line-firm)",
+        strokeWidth: 1.75,
         strokeDasharray: isSandbox ? "6 4" : ""
       }
     },
@@ -82,15 +77,11 @@ export function reparentNodeOnGraph(graph: Graph, childId: string, newParentId: 
   graph.addEdge({
     source: newParentId,
     target: childId,
-    labels: [
-      {
-        attrs: { label: { text: rel, fill: isSandbox ? "#64748b" : "#0f172a", fontSize: 11 } }
-      }
-    ],
+    labels: [mmEdgeLabelBlock(rel, isSandbox)],
     attrs: {
       line: {
-        stroke: isSandbox ? "#94a3b8" : "#0f172a",
-        strokeWidth: 1.5,
+        stroke: isSandbox ? "var(--mm-edge-line-draft)" : "var(--mm-edge-line-firm)",
+        strokeWidth: 1.75,
         strokeDasharray: isSandbox ? "6 4" : ""
       }
     },

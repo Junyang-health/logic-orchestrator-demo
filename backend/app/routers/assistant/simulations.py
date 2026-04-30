@@ -9,6 +9,7 @@ from app.services.assistant_simulations import (
     black_swan_apply_mitigations_patch,
     black_swan_run_simulation,
     black_swan_scan_scenarios,
+    run_optimism_baseline_explain,
     simulate_optimism_and_patch,
 )
 
@@ -24,6 +25,9 @@ from .schemas import (
     BlackSwanScanResponse,
     BlackSwanScenarioOut,
     BlackSwanScenarioResultOut,
+    OptimismBaselineExplainRequest,
+    OptimismBaselineExplainResponse,
+    OptimismDriverNoteOut,
     OptimismSimRequest,
     SimResponse,
 )
@@ -58,6 +62,43 @@ def simulate_optimism(req: OptimismSimRequest) -> SimResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Optimism simulation failed: {e}") from e
     return SimResponse(mindmap=merged, report=report)
+
+
+@router.post("/assistant/simulate/optimism/explain-baseline", response_model=OptimismBaselineExplainResponse)
+def optimism_explain_baseline(req: OptimismBaselineExplainRequest) -> OptimismBaselineExplainResponse:
+    branch_guard(req.full_nodes, req.branch_root_id)
+    try:
+        llm = llm_assistant_apply_compact()
+        m = req.meter.model_dump(exclude_none=True)
+        raw = run_optimism_baseline_explain(
+            llm=llm,
+            branch_root_id=req.branch_root_id,
+            full_nodes=[dict(n) for n in req.full_nodes if isinstance(n, dict)],
+            full_edges=[dict(e) for e in req.full_edges if isinstance(e, dict)],
+            currency=req.currency,
+            meter=m,
+            derived_tam=req.derived_tam,
+            derived_som=req.derived_som,
+            derived_arr=req.derived_arr,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Optimism baseline explain failed: {e}") from e
+    notes = [
+        OptimismDriverNoteOut(
+            field=str(x.get("field") or ""),
+            note=str(x.get("note") or ""),
+            evidence_node_id=x.get("evidence_node_id"),
+        )
+        for x in (raw.get("driver_notes") or [])
+        if isinstance(x, dict)
+    ]
+    return OptimismBaselineExplainResponse(
+        summary=str(raw.get("summary") or ""),
+        computation_steps=[str(s) for s in (raw.get("computation_steps") or []) if str(s).strip()],
+        driver_notes=notes,
+        caveats=[str(c) for c in (raw.get("caveats") or []) if str(c).strip()],
+        confidence=str(raw.get("confidence") or "medium"),
+    )
 
 
 @router.post("/assistant/simulate/black-swan/scan", response_model=BlackSwanScanResponse)

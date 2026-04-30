@@ -76,6 +76,8 @@ export type MeceScanBundle = {
     summary: string;
     detail?: string;
     suggested_label?: string;
+    /** Gap ids from `gaps[]` this patch is meant to fix (from model + server validation). */
+    addresses_gaps?: string[];
   }[];
 };
 

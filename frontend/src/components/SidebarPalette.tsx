@@ -28,7 +28,7 @@ export default function SidebarPalette(props: { graph: Graph | null }) {
     return new Node({
       shape: "mindmap-react-node",
       width: 280,
-      height: 96,
+      height: 72,
       data: {
         id: "",
         type: "inferred",
@@ -57,18 +57,18 @@ export default function SidebarPalette(props: { graph: Graph | null }) {
   }, [props.graph, sourceNode]);
 
   return (
-    <div className="h-full w-[180px] border-r border-slate-200 bg-white p-3">
-      <div className="mb-2 text-xs font-semibold text-slate-800">{t("palette_title")}</div>
-      <div className="mb-3 text-[11px] text-slate-600">
+    <div className="h-full w-[180px] border-r border-[var(--mm-border-subtle)] bg-[var(--mm-sidebar-bg)] p-3">
+      <div className="mb-2 text-xs font-medium text-[var(--mm-text-title)]">{t("palette_title")}</div>
+      <div className="mb-3 text-[11px] font-medium text-[var(--mm-text-muted)]">
         {t("palette_mode")}{" "}
-        <span className="font-medium">{sandboxMode ? t("palette_sandbox") : t("palette_main")}</span>
+        <span className="font-medium text-[var(--mm-text-title)]">{sandboxMode ? t("palette_sandbox") : t("palette_main")}</span>
       </div>
       <div className="space-y-2">
         {PALETTE.map((item) => (
           <button
             key={item.id}
             type="button"
-            className="w-full rounded border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            className="mm-sidebar-section w-full px-2 py-2 text-left text-xs text-[var(--mm-text-title)] transition hover:bg-[color-mix(in_srgb,var(--mm-sidebar-bg)_70%,var(--mm-card-bg))] dark:border-[var(--mm-border-subtle)] dark:bg-slate-950/40 dark:shadow-none dark:hover:bg-slate-900/50"
             onMouseDown={(e) => {
               if (!props.graph || !dndRef.current) return;
               const id = `n_${Math.random().toString(16).slice(2, 10)}`;
@@ -88,7 +88,7 @@ export default function SidebarPalette(props: { graph: Graph | null }) {
             }}
           >
             <div className="font-medium">{item.label}</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">{t("palette_drag_hint")}</div>
+            <div className="mt-0.5 text-[11px] font-medium text-[var(--mm-text-muted)]">{t("palette_drag_hint")}</div>
           </button>
         ))}
       </div>

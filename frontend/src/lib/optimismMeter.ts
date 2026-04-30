@@ -243,7 +243,52 @@ export function availableMetrics(ex: BranchFinancialExtract): OptimismMetric[] {
 
 export type AffectedNodeHint = { nodeId: string; label: string; reason: string };
 
-/** Other branch nodes likely tied to the same financial story (for review). */
+/**
+ * Snake_case ids like `rev_evidence_tam` fail `\btam\b` because `_` is a word char in JS.
+ * Split on non-alphanumeric and require an exact metric token (tam / som / sam / arr).
+ */
+function idContainsMetricToken(nodeId: string, focus: OptimismMetric): boolean {
+  const tokens = nodeId.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (focus === "TAM") return tokens.includes("tam");
+  if (focus === "SOM") return tokens.includes("som") || tokens.includes("sam");
+  return tokens.includes("arr");
+}
+
+/** Abbrev appearance in text: not glued inside a longer latin token (e.g. avoid "tom" for TAM). */
+function textHasMetricAbbrev(text: string, abbrev: "tam" | "som" | "sam" | "arr"): boolean {
+  const re = new RegExp(`(?:^|[^a-z0-9])${abbrev}(?:$|[^a-z0-9])`, "i");
+  return re.test(text);
+}
+
+/** Heuristic: node is relevant to the current stress metric (critical_values first, then text/id). */
+function branchNodeMatchesStressFocus(n: MindmapNode, focus: OptimismMetric): boolean {
+  for (const { label } of nodeCriticalArray(n)) {
+    const m = metricFromCriticalLabel(label);
+    if (m === focus) return true;
+  }
+  if (idContainsMetricToken(n.id, focus)) return true;
+
+  const blob = `${n.id}\n${n.label}\n${JSON.stringify(n.metadata ?? {})}`.toLowerCase();
+  if (focus === "TAM") {
+    return (
+      textHasMetricAbbrev(blob, "tam") ||
+      /总可达|可达市场|市场规模|市场体量|可触达|total\s*addressable|addressable\s*market/i.test(blob)
+    );
+  }
+  if (focus === "SOM") {
+    return (
+      textHasMetricAbbrev(blob, "som") ||
+      textHasMetricAbbrev(blob, "sam") ||
+      /serviceable|可服务|可获得|可获|细分市场|serviceable\s+obtainable/i.test(blob)
+    );
+  }
+  return (
+    textHasMetricAbbrev(blob, "arr") ||
+    /recurring|经常性|年经常性|年营收|annual\s*recurring|\bmrr\b|\barpa\b|客单价|客户数|accounts?/i.test(blob)
+  );
+}
+
+/** Branch nodes to review under the selected stress metric (excludes baseline source anchors). */
 export function findAffectedBranchNodes(
   branchRootId: string,
   graph: MindmapJson,
@@ -254,23 +299,15 @@ export function findAffectedBranchNodes(
   const anchor = new Set(
     [sourceNodeId.TAM, sourceNodeId.SOM, sourceNodeId.ARR].filter((x): x is string => Boolean(x))
   );
-  const keywords =
-    focus === "TAM"
-      ? ["tam", "总可达", "可达市场", "som", "sam", "arr", "细分", "渗透"]
-      : focus === "SOM"
-        ? ["som", "sam", "可服务", "细分", "tam", "arr", "渗透"]
-        : ["arr", "经常性", "tam", "som", "sam", "渗透", "客户"];
 
   const hints: AffectedNodeHint[] = [];
   for (const n of branch.nodes) {
     if (anchor.has(n.id)) continue;
-    const blob = `${n.label}\n${JSON.stringify(n.metadata ?? {})}`.toLowerCase();
-    const hit = keywords.some((k) => blob.includes(k));
-    if (!hit) continue;
+    if (!branchNodeMatchesStressFocus(n, focus)) continue;
     hints.push({
       nodeId: n.id,
       label: n.label,
-      reason: `Mentions metrics related to ${focus}; review if ${focus} change should align.`
+      reason: `Related to ${focus} stress; review if ${focus} change should align.`
     });
   }
   return hints.slice(0, 24);
@@ -294,19 +331,8 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-/** Mirrors backend `compute_optimism_meter_scenario` for live UI preview. */
-export function computeMeterPreview(
-  focus: OptimismMetric,
-  deltaPct: number,
-  inp: MeterInputs
-): {
-  delta_pct: number;
-  before: Record<OptimismMetric, number | null>;
-  after: Record<OptimismMetric, number | null>;
-  pctLabel: Record<OptimismMetric, string | null>;
-} {
-  const dp = snapDeltaPct(deltaPct);
-  const m = 1 + dp / 100;
+/** Derive TAM / SOM / ARR from driver inputs (same rules as backend meter scenario). */
+export function deriveMetricsFromMeterInputs(inp: MeterInputs): Record<OptimismMetric, number | null> {
   const tam = inp.tam_total;
   const seg = inp.target_segment_pct;
   const arpa = inp.arpa_year;
@@ -326,8 +352,34 @@ export function computeMeterPreview(
     arr = sam * (clamp(pen, 0, 100) / 100);
   }
 
-  const before: Record<OptimismMetric, number | null> = { TAM: tam, SOM: sam, ARR: arr };
-  const after: Record<OptimismMetric, number | null> = { TAM: tam, SOM: sam, ARR: arr };
+  return { TAM: tam, SOM: sam, ARR: arr };
+}
+
+/** Mirrors backend `compute_optimism_meter_scenario` for live UI preview. */
+export function computeMeterPreview(
+  focus: OptimismMetric,
+  deltaPct: number,
+  inp: MeterInputs
+): {
+  delta_pct: number;
+  before: Record<OptimismMetric, number | null>;
+  after: Record<OptimismMetric, number | null>;
+  pctLabel: Record<OptimismMetric, string | null>;
+} {
+  const dp = snapDeltaPct(deltaPct);
+  const m = 1 + dp / 100;
+  const tam = inp.tam_total;
+  const seg = inp.target_segment_pct;
+  const arpa = inp.arpa_year;
+  const customers = inp.customers_total;
+  const pen = inp.penetration_pct;
+
+  const derived = deriveMetricsFromMeterInputs(inp);
+  const sam = derived.SOM;
+  const arr = derived.ARR;
+
+  const before: Record<OptimismMetric, number | null> = { ...derived };
+  const after: Record<OptimismMetric, number | null> = { TAM: derived.TAM, SOM: derived.SOM, ARR: derived.ARR };
 
   const f = focus;
   if (f === "TAM" && tam != null) {

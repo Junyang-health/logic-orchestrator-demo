@@ -16,9 +16,9 @@ export default function RightDockNav() {
   );
 
   return (
-    <nav className="border-b ios-divider px-4 pt-3">
+      <nav className="border-b border-[var(--mm-border-subtle)] px-4 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">{t("nav_appearance")}</div>
+        <div className="text-xs font-medium text-[var(--mm-text-title)]">{t("nav_appearance")}</div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div
             className="ios-segment shrink-0"
@@ -28,7 +28,7 @@ export default function RightDockNav() {
             <button
               type="button"
               className={[
-                "ios-segment-item px-2 py-0.5 text-[10px]",
+                "ios-segment-item px-2 py-0.5 text-[10px] font-medium",
                 locale === "en" ? "ios-segment-item-active" : "ios-segment-item-inactive"
               ].join(" ")}
               onClick={() => setLocale("en")}
@@ -38,7 +38,7 @@ export default function RightDockNav() {
             <button
               type="button"
               className={[
-                "ios-segment-item px-2 py-0.5 text-[10px]",
+                "ios-segment-item px-2 py-0.5 text-[10px] font-medium",
                 locale === "zh" ? "ios-segment-item-active" : "ios-segment-item-inactive"
               ].join(" ")}
               onClick={() => setLocale("zh")}
@@ -71,30 +71,30 @@ export default function RightDockNav() {
         </div>
       </div>
       <div className="ios-segment w-full">
-        <button
-          type="button"
-          className={[
-            "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px]",
+            <button
+              type="button"
+              className={[
+                "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px] font-medium",
             activePanel === "source" ? "ios-segment-item-active" : "ios-segment-item-inactive"
           ].join(" ")}
           onClick={() => setActivePanel("source")}
         >
           {t("nav_source")}
         </button>
-        <button
-          type="button"
-          className={[
-            "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px]",
+            <button
+              type="button"
+              className={[
+                "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px] font-medium",
             activePanel === "review" ? "ios-segment-item-active" : "ios-segment-item-inactive"
           ].join(" ")}
           onClick={() => setActivePanel("review")}
         >
           {t("nav_review")}
         </button>
-        <button
-          type="button"
-          className={[
-            "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px]",
+            <button
+              type="button"
+              className={[
+                "ios-segment-item min-w-0 flex-1 px-1.5 text-[11px] font-medium",
             activePanel === "export" ? "ios-segment-item-active" : "ios-segment-item-inactive"
           ].join(" ")}
           onClick={() => setActivePanel("export")}

@@ -158,13 +158,13 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
 
   return (
     <div className="space-y-3">
-      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("source_sidebar_title")}</div>
+      <div className="text-sm font-medium text-[var(--mm-text-title)] dark:text-slate-100">{t("source_sidebar_title")}</div>
       <SourceMaterialPanel backendBase={backendBase} />
       <div className="ios-card p-3">
-        <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("source_node_actions")}</div>
+        <div className="text-xs font-medium text-[var(--mm-text-title)]">{t("source_node_actions")}</div>
         {selectedNode?.id ? (
           <div className="mt-2 space-y-2">
-            <div className="text-[11px] text-slate-600 dark:text-slate-300">
+            <div className="text-[11px] font-medium text-[var(--mm-text-muted)] dark:text-slate-300">
               {t("source_selected")} <span className="font-mono">{selectedNode.id}</span>
             </div>
             {reparentingNodeId ? (
@@ -179,7 +179,7 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
               </div>
             ) : null}
             <div className="grid grid-cols-2 gap-2">
-              <label className="text-[11px] text-slate-700 dark:text-slate-200">
+              <label className="text-[11px] font-medium text-[var(--mm-text-title)] dark:text-slate-200">
                 {t("source_child_type")}
                 <select
                   className="mt-1 ios-select"
@@ -190,7 +190,7 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
                   <option value="evidence">{t("palette_evidence")}</option>
                 </select>
               </label>
-              <label className="text-[11px] text-slate-700 dark:text-slate-200">
+              <label className="text-[11px] font-medium text-[var(--mm-text-title)] dark:text-slate-200">
                 {t("source_edge_label")}
                 <input
                   className="mt-1 ios-input py-1.5"
@@ -200,7 +200,7 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
                 />
               </label>
             </div>
-            <label className="block text-[11px] text-slate-700 dark:text-slate-200">
+            <label className="block text-[11px] font-medium text-[var(--mm-text-title)] dark:text-slate-200">
               {t("source_child_label")}
               <input
                 className="mt-1 ios-input"
@@ -236,19 +236,19 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
             </div>
           </div>
         ) : (
-          <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="mt-2 text-[11px] font-medium text-[var(--mm-text-muted)] dark:text-slate-300">
             {t("source_click_node")}
           </div>
         )}
-        <p className="mt-2 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("source_canvas_help")}</p>
+        <p className="mt-2 text-[10px] font-medium leading-snug text-[var(--mm-text-placeholder)] dark:text-slate-400">{t("source_canvas_help")}</p>
       </div>
       <div className="ios-card p-3">
-        <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("source_base_model")}</div>
-        <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+        <div className="text-xs font-medium text-[var(--mm-text-title)]">{t("source_base_model")}</div>
+        <p className="mt-1 text-[11px] font-medium text-[var(--mm-text-muted)] dark:text-slate-300">
           {t("source_base_model_help")}{" "}
           <code className="rounded bg-white/70 px-1 py-0.5 dark:bg-slate-950/40">backend/data/model_settings.json</code>.
         </p>
-        <label className="mt-2 block text-xs text-slate-700 dark:text-slate-200">
+        <label className="mt-2 block text-xs font-medium text-[var(--mm-text-title)] dark:text-slate-200">
           {t("source_active_model")}
           <select
             className="mt-1 ios-select"
@@ -272,7 +272,7 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
             onChange={(e) => setNewModelId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addBaseModel()}
           />
-          <button type="button" className="ios-button shrink-0" onClick={() => addBaseModel()}>
+          <button type="button" className="ios-button-secondary shrink-0" onClick={() => addBaseModel()}>
             {t("source_add")}
           </button>
         </div>
@@ -280,9 +280,9 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
           {baseModels.map((m) => (
             <div
               key={m}
-              className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-[11px] shadow-sm backdrop-blur-xl"
+              className="mm-sidebar-section flex items-center justify-between gap-2 px-3 py-2 text-[11px] dark:border-[var(--mm-border-subtle)] dark:bg-slate-950/40 dark:shadow-none"
             >
-              <span className="truncate font-mono text-slate-800">{m}</span>
+              <span className="truncate font-mono text-[var(--mm-text-title)]">{m}</span>
               <button
                 type="button"
                 className="shrink-0 text-red-700 hover:underline"
@@ -295,15 +295,15 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
           ))}
         </div>
         {modelError ? <p className="mt-2 text-[11px] text-red-700">{modelError}</p> : null}
-        <button type="button" className="mt-2 text-[11px] text-slate-600 underline" onClick={() => refreshModels()}>
+        <button type="button" className="ios-button-ghost mt-2 px-1 py-0 text-[11px]" onClick={() => refreshModels()}>
           {t("source_refresh")}
         </button>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs text-slate-700 dark:text-slate-200">
+        <label className="text-xs font-medium text-[var(--mm-text-title)] dark:text-slate-200">
           {t("source_agent_id")}
           <select
-            className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"
+            className="mt-1 ios-select py-1 text-xs"
             value={agentId}
             onChange={(e) => setAgentId(e.target.value)}
           >
@@ -313,10 +313,10 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
             <option value="agent-4">agent-4</option>
           </select>
         </label>
-        <label className="text-xs text-slate-700 dark:text-slate-200">
+        <label className="text-xs font-medium text-[var(--mm-text-title)] dark:text-slate-200">
           {t("source_agents")}
           <select
-            className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"
+            className="mt-1 ios-select py-1 text-xs"
             value={numAgents}
             onChange={(e) => setNumAgents(Number(e.target.value))}
           >
@@ -327,13 +327,13 @@ export default function SourceSidebarPanel(props: { graph: Graph | null; backend
           </select>
         </label>
       </div>
-      <div className="ios-card p-2 text-[11px] text-slate-700 dark:text-slate-200">
+      <div className="ios-card p-2 text-[11px] font-medium text-[var(--mm-text-title)] dark:text-slate-200">
         {t("source_cluster")}
-        <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(clusterAssignments, null, 2)}</pre>
+        <pre className="mt-1 whitespace-pre-wrap font-normal text-[var(--mm-text-muted)]">{JSON.stringify(clusterAssignments, null, 2)}</pre>
       </div>
-      <div className="text-sm text-slate-600 dark:text-slate-300">
+      <div className="text-sm font-medium text-[var(--mm-text-muted)] dark:text-slate-300">
         {selectedNode ? (
-          <pre className="whitespace-pre-wrap ios-card p-3 text-xs text-slate-800 dark:text-slate-100">
+          <pre className="whitespace-pre-wrap ios-card p-3 text-xs text-[var(--mm-text-title)] dark:text-slate-100">
             {JSON.stringify(selectedNode, null, 2)}
           </pre>
         ) : (

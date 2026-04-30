@@ -1,48 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { combineGraphs } from "../lib/graphBranch";
 import { getBackendBase } from "../lib/backendBase";
 import { useI18n } from "../i18n/useI18n";
-import {
-  availableMetrics,
-  branchExtractToMeterInputs,
-  computeMeterPreview,
-  extractBranchFinancialBaselines,
-  findAffectedBranchNodes,
-  type OptimismMetric
-} from "../lib/optimismMeter";
 import type { MindmapJson } from "../types/mindmap";
 import AssistantSkillsBlock from "./assistant/AssistantSkillsBlock";
 import AssistantTranscriptBlock from "./assistant/AssistantTranscriptBlock";
-import AssistantPanelLeftActions from "./assistant/AssistantPanelLeftActions";
-import AssistantPanelRightComposer from "./assistant/AssistantPanelRightComposer";
+import AssistantWorkspaceFooter from "./assistant/AssistantWorkspaceFooter";
 import AssistantPanelHeader from "./assistant/AssistantPanelHeader";
 import AssistantPanelModeSegment from "./assistant/AssistantPanelModeSegment";
-import AssistantPanelSimulationStack from "./assistant/AssistantPanelSimulationStack";
+import AssistantPanelSimulationStack, {
+  type AssistantPanelSimulationStackProps
+} from "./assistant/AssistantPanelSimulationStack";
 import AssistantCounselFlow from "./assistant/AssistantCounselFlow";
 import AssistantSandboxDraftBanner from "./assistant/AssistantSandboxDraftBanner";
 import AssistantSessionSourcesCard from "./assistant/AssistantSessionSourcesCard";
 import type { AssistantPanelMode } from "./assistant/assistantPanelMode";
-import {
-  SKILLS_STORAGE_KEY,
-  ROUNDTABLE_LIB_KEY,
-  loadRoundtableLib,
-  loadSkillsFromStorage,
-  presetRoundtableInstruction,
-  type BlackSwanRunBundle,
-  type BlackSwanScenario,
-  type ChatRow,
-  type CustomSkillRow,
-  type MeceEvidenceRow,
-  type MeceScanBundle,
-  type RoundtablePersona,
-  type RoundtableTranscriptRow
-} from "./assistant/assistantTypes";
-import { readAssistantSourceFilePickMap, writeAssistantSourceFilePickForProject } from "./assistant/assistantSourceFilePick";
+import { buildMeceFooterPrimary } from "./assistant/panel/buildMeceFooterPrimary";
+import { tryParseSlashModeOnlyLine } from "./assistant/slashModeCommands";
+import { useAssistantPanelChatSession } from "./assistant/panel/useAssistantPanelChatSession";
+import { useAssistantPanelRoundtable } from "./assistant/panel/useAssistantPanelRoundtable";
+import { useAssistantPanelSimulation } from "./assistant/panel/useAssistantPanelSimulation";
+import { useAssistantPanelSkills } from "./assistant/panel/useAssistantPanelSkills";
+import { useAssistantPanelSources } from "./assistant/panel/useAssistantPanelSources";
 import {
   useAssistantPanelActions,
   type AssistantPanelActionsCtx
 } from "./assistant/useAssistantPanelActions";
 import { useAssistantGraphSlice, useAssistantSessionSlice, useAssistantSkillsSlice } from "./assistant/useAssistantZustand";
+import useUiStore from "../store/useUiStore";
 
 export type { CustomSkillRow } from "./assistant/assistantTypes";
 
@@ -51,154 +36,42 @@ export default function AssistantPanel() {
   const { mainGraph, sandboxGraph, sandboxMode, setSandboxMode, loadMainGraph, clearSandbox } = useAssistantGraphSlice();
   const { selectedNode, closeAssistantSession } = useAssistantSessionSlice();
   const { skills, toggleSkill } = useAssistantSkillsSlice();
+  const projectId = useUiStore((s) => s.projectId);
 
   const backendBase = getBackendBase();
 
-  const [messages, setMessages] = useState<ChatRow[]>([]);
-  const [draft, setDraft] = useState("");
-  const [webSearchQuery, setWebSearchQuery] = useState<string>(() => localStorage.getItem("mindmap_web_search_query") || "");
-  const [activeProjectId, setActiveProjectId] = useState(() => {
-    try {
-      return (typeof localStorage !== "undefined" && localStorage.getItem("mindmap_project_id")?.trim()) || "";
-    } catch {
-      return "";
-    }
-  });
-  const [projectFiles, setProjectFiles] = useState<{ id: string; filename: string }[]>([]);
-  const [projectFilesLoadError, setProjectFilesLoadError] = useState(false);
-  const [selectedSourceFileIds, setSelectedSourceFileIds] = useState<string[]>([]);
   const [mode, setMode] = useState<AssistantPanelMode>("chat");
-
-  const [rtPersonas, setRtPersonas] = useState<RoundtablePersona[]>([]);
-  const [rtTranscript, setRtTranscript] = useState<RoundtableTranscriptRow[]>([]);
-  const [rtSteering, setRtSteering] = useState("");
-  const [rtNewName, setRtNewName] = useState("");
-  const [rtNewInstruction, setRtNewInstruction] = useState("");
-  const [rtLib, setRtLib] = useState<{ name: string; instruction: string }[]>(() =>
-    typeof localStorage !== "undefined" ? loadRoundtableLib() : []
-  );
-  const [rtRoundBusy, setRtRoundBusy] = useState(false);
-  const [rtProposeBusy, setRtProposeBusy] = useState(false);
-  const [rtApplyBusy, setRtApplyBusy] = useState(false);
-  const [rtProposal, setRtProposal] = useState<{
-    discussion_summary: string;
-    recommended_mindmap_changes: string;
-    patch: Record<string, unknown>;
-  } | null>(null);
-  const [rtConfirmApply, setRtConfirmApply] = useState(false);
-
-  const [currency, setCurrency] = useState("USD");
-  /** Meter: −100% … +100% vs branch baseline, steps of 10%. */
-  const [optimismDeltaPct, setOptimismDeltaPct] = useState(0);
-  const [optimismFocus, setOptimismFocus] = useState<OptimismMetric | null>(null);
-  const [simBusy, setSimBusy] = useState(false);
-  const [simReport, setSimReport] = useState<string>("");
-  const [bsScenarios, setBsScenarios] = useState<BlackSwanScenario[] | null>(null);
-  const [bsSelectedScenarioIds, setBsSelectedScenarioIds] = useState<Set<string>>(() => new Set());
-  const [bsRunBundle, setBsRunBundle] = useState<BlackSwanRunBundle | null>(null);
-  const [bsMitigationPick, setBsMitigationPick] = useState<Set<string>>(() => new Set());
-  const [meceScanBundle, setMeceScanBundle] = useState<MeceScanBundle | null>(null);
-  const [meceSelectedMods, setMeceSelectedMods] = useState<Set<string>>(() => new Set());
-  const [meceEvidenceBundle, setMeceEvidenceBundle] = useState<{ results: MeceEvidenceRow[]; corpus_stats?: Record<string, unknown> } | null>(
-    null
-  );
-  const [meceWebHints, setMeceWebHints] = useState<Record<string, string>>({});
-  const [meceWebBusyId, setMeceWebBusyId] = useState<string | null>(null);
-  const [customSkills, setCustomSkills] = useState<CustomSkillRow[]>(() =>
-    typeof localStorage !== "undefined" ? loadSkillsFromStorage() : []
-  );
-  const [newSkillName, setNewSkillName] = useState("");
-  const [newSkillBody, setNewSkillBody] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [applyBusy, setApplyBusy] = useState(false);
-  const [ingestWebBusy, setIngestWebBusy] = useState(false);
   const [error, setError] = useState("");
-  const [skillImportUrl, setSkillImportUrl] = useState("");
-  const [skillImportBusy, setSkillImportBusy] = useState(false);
-  const [skillImportMessage, setSkillImportMessage] = useState("");
-  /** Skill id → instruction panel expanded (default collapsed = details hidden). */
-  const [skillDetailsOpen, setSkillDetailsOpen] = useState<Record<string, boolean>>({});
-  const listRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(customSkills));
-    } catch {
-      /* ignore quota */
-    }
-  }, [customSkills]);
+  const sources = useAssistantPanelSources({ projectId, backendBase, setError, t });
 
-  useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, chatBusy, mode, rtTranscript, rtRoundBusy]);
+  const skillsVertical = useAssistantPanelSkills({ t });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(ROUNDTABLE_LIB_KEY, JSON.stringify(rtLib));
-    } catch {
-      /* ignore */
-    }
-  }, [rtLib]);
+  const roundtable = useAssistantPanelRoundtable({ setError });
 
   const combined: MindmapJson = useMemo(() => combineGraphs(mainGraph, sandboxGraph), [mainGraph, sandboxGraph]);
 
-  const branchFinancial = useMemo(() => {
-    if (!selectedNode?.id) return null;
-    return extractBranchFinancialBaselines(selectedNode.id, combined);
-  }, [selectedNode?.id, combined]);
+  const simulation = useAssistantPanelSimulation({ mode, selectedNode, combined });
 
-  const meterInputs = useMemo(() => {
-    if (!branchFinancial) return null;
-    return branchExtractToMeterInputs(branchFinancial);
-  }, [branchFinancial]);
+  const chat = useAssistantPanelChatSession({
+    mode,
+    setError,
+    rtTranscriptLength: roundtable.rtTranscript.length,
+    rtRoundBusy: roundtable.rtRoundBusy
+  });
 
-  const optimismPreview = useMemo(() => {
-    if (!meterInputs || !optimismFocus) return null;
-    return computeMeterPreview(optimismFocus, optimismDeltaPct, meterInputs);
-  }, [meterInputs, optimismFocus, optimismDeltaPct]);
-
-  const optimismAffected = useMemo(() => {
-    if (!selectedNode?.id || !optimismFocus || !branchFinancial) return [];
-    return findAffectedBranchNodes(selectedNode.id, combined, optimismFocus, branchFinancial.sourceNodeId);
-  }, [selectedNode?.id, combined, optimismFocus, branchFinancial]);
-
-  const optimismMetricsAvailable = useMemo(
-    () => (branchFinancial ? availableMetrics(branchFinancial) : []),
-    [branchFinancial]
-  );
-
-  useEffect(() => {
-    if (mode !== "optimism") return;
-    const av = optimismMetricsAvailable;
-    if (av.length === 0) {
-      setOptimismFocus(null);
-      return;
-    }
-    setOptimismFocus((prev) => (prev && av.includes(prev) ? prev : av[0]));
-  }, [mode, optimismMetricsAvailable]);
-
-  useEffect(() => {
-    setBsScenarios(null);
-    setBsSelectedScenarioIds(new Set());
-    setBsRunBundle(null);
-    setBsMitigationPick(new Set());
-    setMeceScanBundle(null);
-    setMeceSelectedMods(new Set());
-    setMeceEvidenceBundle(null);
-    setMeceWebHints({});
-    setMeceWebBusyId(null);
-  }, [selectedNode?.id]);
+  const rtGraphNodeIds = useMemo(() => combined.nodes.map((n) => String(n.id)), [combined.nodes]);
 
   const sandboxHasDrafts = sandboxGraph.nodes.length > 0 || sandboxGraph.edges.length > 0;
 
   const payloadSkills = useMemo(
     () =>
-      customSkills.map((s) => ({
+      skillsVertical.customSkills.map((s) => ({
         name: s.name.trim() || t("custom_skill"),
         instruction: s.instruction.trim(),
         enabled: s.enabled
       })),
-    [customSkills, t, locale]
+    [skillsVertical.customSkills, t, locale]
   );
 
   const builtinPayload = useMemo(
@@ -208,133 +81,6 @@ export default function AssistantPanel() {
     }),
     [skills.financialAnalyst, skills.webSearch]
   );
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("mindmap_web_search_query", webSearchQuery);
-    } catch {
-      // ignore
-    }
-  }, [webSearchQuery]);
-
-  useEffect(() => {
-    const read = () => (typeof localStorage !== "undefined" && localStorage.getItem("mindmap_project_id")?.trim()) || "";
-    setActiveProjectId(read());
-    const onProject = (e: Event) => {
-      const id = (e as CustomEvent<{ projectId?: string }>).detail?.projectId;
-      if (id != null) setActiveProjectId(String(id).trim());
-    };
-    const onStorage = (ev: StorageEvent) => {
-      if (ev.key === "mindmap_project_id") setActiveProjectId((ev.newValue || "").trim());
-    };
-    window.addEventListener("mindmap:projectId", onProject);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.removeEventListener("mindmap:projectId", onProject);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
-
-  const loadProjectFiles = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!activeProjectId || !backendBase) {
-        setProjectFiles([]);
-        setProjectFilesLoadError(false);
-        return;
-      }
-      setProjectFilesLoadError(false);
-      try {
-        const res = await fetch(`${backendBase}/projects/${encodeURIComponent(activeProjectId)}/files`, { signal });
-        if (!res.ok) {
-          setProjectFilesLoadError(true);
-          setProjectFiles([]);
-          return;
-        }
-        const rows = (await res.json()) as { id: string; filename: string }[];
-        if (signal?.aborted) return;
-        setProjectFiles(Array.isArray(rows) ? rows.map((r) => ({ id: r.id, filename: r.filename || r.id })) : []);
-      } catch {
-        if (!signal?.aborted) {
-          setProjectFilesLoadError(true);
-          setProjectFiles([]);
-        }
-      }
-    },
-    [activeProjectId, backendBase]
-  );
-
-  useEffect(() => {
-    const ac = new AbortController();
-    void loadProjectFiles(ac.signal);
-    return () => ac.abort();
-  }, [loadProjectFiles]);
-
-  const ingestWebToSources = useCallback(async () => {
-    const projectId = activeProjectId?.trim() || "";
-    if (!projectId) {
-      setError(t("assistant_ingest_no_project"));
-      return;
-    }
-    const lines = webSearchQuery
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (lines.length === 0) {
-      setError(t("assistant_ingest_no_queries"));
-      return;
-    }
-    setIngestWebBusy(true);
-    setError("");
-    try {
-      const res = await fetch(`${backendBase}/projects/${encodeURIComponent(projectId)}/files/ingest-web`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ queries: lines, max_results_per_query: 3, max_pages_ingest: 15 })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        const d = (err as { detail?: unknown }).detail;
-        throw new Error(typeof d === "string" ? d : d != null ? JSON.stringify(d) : `ingest ${res.status}`);
-      }
-      const data = (await res.json()) as { stored: { id: string }[]; notices: string[] };
-      await loadProjectFiles();
-      const newIds = (data.stored || []).map((s) => s.id);
-      if (newIds.length > 0) {
-        setSelectedSourceFileIds((prev) => Array.from(new Set([...prev, ...newIds])));
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("assistant_ingest_fail"));
-    } finally {
-      setIngestWebBusy(false);
-    }
-  }, [activeProjectId, backendBase, loadProjectFiles, t, webSearchQuery]);
-
-  useEffect(() => {
-    if (!activeProjectId) {
-      setSelectedSourceFileIds([]);
-      return;
-    }
-    if (projectFiles.length === 0) {
-      setSelectedSourceFileIds([]);
-      return;
-    }
-    const idSet = new Set(projectFiles.map((f) => f.id));
-    setSelectedSourceFileIds((prev) => {
-      if (prev.length > 0) {
-        const kept = prev.filter((id) => idSet.has(id));
-        if (kept.length > 0) return kept;
-      }
-      const map = readAssistantSourceFilePickMap();
-      const saved = (map[activeProjectId] ?? []).filter((id) => idSet.has(id));
-      if (saved.length > 0) return saved;
-      return projectFiles.map((f) => f.id);
-    });
-  }, [activeProjectId, projectFiles]);
-
-  useEffect(() => {
-    if (!activeProjectId) return;
-    writeAssistantSourceFilePickForProject(activeProjectId, selectedSourceFileIds);
-  }, [activeProjectId, selectedSourceFileIds]);
 
   const actionsCtxRef = useRef({} as AssistantPanelActionsCtx);
   const {
@@ -355,243 +101,267 @@ export default function AssistantPanel() {
   } = useAssistantPanelActions(actionsCtxRef);
 
   actionsCtxRef.current = {
+    assistantMode: mode,
     backendBase,
     combined,
     selectedNodeId: selectedNode?.id,
-    draft,
-    chatBusy,
-    messages,
-    webSearchQuery,
+    t,
+    draft: chat.draft,
+    chatBusy: chat.chatBusy,
+    messages: chat.messages,
+    webSearchQuery: sources.webSearchQuery,
     skillsWebSearch: skills.webSearch,
-    assistantSourceFileIds: selectedSourceFileIds,
+    assistantSourceFileIds: sources.selectedSourceFileIds,
     payloadSkills,
     builtinPayload,
     sandboxMode,
     sandboxHasDrafts,
-    skillImportUrl,
-    skillImportBusy,
-    meterInputs,
-    optimismFocus,
-    optimismDeltaPct,
-    optimismAffected,
-    currency,
-    bsScenarios,
-    bsSelectedScenarioIds,
-    bsRunBundle,
-    bsMitigationPick,
-    meceScanBundle,
-    meceSelectedMods,
-    meceEvidenceBundle,
-    meceWebHints,
-    rtPersonas,
-    rtTranscript,
-    rtSteering,
-    rtProposal,
-    rtConfirmApply,
-    setDraft,
-    setMessages,
+    skillImportUrl: skillsVertical.skillImportUrl,
+    skillImportBusy: skillsVertical.skillImportBusy,
+    meterInputs: simulation.meterInputs,
+    optimismFocus: simulation.optimismFocus,
+    optimismDeltaPct: simulation.optimismDeltaPct,
+    optimismAffected: simulation.optimismAffected,
+    currency: simulation.currency,
+    bsScenarios: simulation.bsScenarios,
+    bsSelectedScenarioIds: simulation.bsSelectedScenarioIds,
+    bsRunBundle: simulation.bsRunBundle,
+    bsMitigationPick: simulation.bsMitigationPick,
+    meceScanBundle: simulation.meceScanBundle,
+    meceSelectedMods: simulation.meceSelectedMods,
+    meceEvidenceBundle: simulation.meceEvidenceBundle,
+    meceWebHints: simulation.meceWebHints,
+    rtPersonas: roundtable.rtPersonas,
+    rtTranscript: roundtable.rtTranscript,
+    rtSteering: roundtable.rtSteering,
+    rtProposal: roundtable.rtProposal,
+    rtConfirmApply: roundtable.rtConfirmApply,
+    setDraft: chat.setDraft,
+    setMessages: chat.setMessages,
     setError,
-    setChatBusy,
-    setApplyBusy,
-    setSimBusy,
-    setSimReport,
-    setBsScenarios,
-    setBsSelectedScenarioIds,
-    setBsRunBundle,
-    setBsMitigationPick,
-    setMeceScanBundle,
-    setMeceSelectedMods,
-    setMeceEvidenceBundle,
-    setMeceWebHints,
-    setMeceWebBusyId,
-    setCustomSkills,
-    setSkillImportUrl,
-    setSkillImportBusy,
-    setSkillImportMessage,
-    setRtTranscript,
-    setRtRoundBusy,
-    setRtProposeBusy,
-    setRtApplyBusy,
-    setRtProposal,
-    setRtConfirmApply,
-    setRtSteering,
+    setChatBusy: chat.setChatBusy,
+    setApplyBusy: chat.setApplyBusy,
+    setSimBusy: simulation.setSimBusy,
+    setSimReport: simulation.setSimReport,
+    setBsScenarios: simulation.setBsScenarios,
+    setBsSelectedScenarioIds: simulation.setBsSelectedScenarioIds,
+    setBsRunBundle: simulation.setBsRunBundle,
+    setBsMitigationPick: simulation.setBsMitigationPick,
+    setMeceScanBundle: simulation.setMeceScanBundle,
+    setMeceSelectedMods: simulation.setMeceSelectedMods,
+    setMeceEvidenceBundle: simulation.setMeceEvidenceBundle,
+    setMeceWebHints: simulation.setMeceWebHints,
+    setMeceWebBusyId: simulation.setMeceWebBusyId,
+    setCustomSkills: skillsVertical.setCustomSkills,
+    setSkillImportUrl: skillsVertical.setSkillImportUrl,
+    setSkillImportBusy: skillsVertical.setSkillImportBusy,
+    setSkillImportMessage: skillsVertical.setSkillImportMessage,
+    setRtTranscript: roundtable.setRtTranscript,
+    setRtRoundBusy: roundtable.setRtRoundBusy,
+    setRtProposeBusy: roundtable.setRtProposeBusy,
+    setRtApplyBusy: roundtable.setRtApplyBusy,
+    setRtProposal: roundtable.setRtProposal,
+    setRtConfirmApply: roundtable.setRtConfirmApply,
+    setRtSteering: roundtable.setRtSteering,
     loadMainGraph,
     clearSandbox,
     setSandboxMode
   };
+
+  const meceFooterPrimary = useMemo(
+    () =>
+      buildMeceFooterPrimary({
+        mode,
+        selectedNodeId: selectedNode?.id,
+        meceScanBundle: simulation.meceScanBundle,
+        meceEvidenceResults: simulation.meceEvidenceBundle?.results,
+        meceSelectedCount: simulation.meceSelectedMods.size,
+        simBusy: simulation.simBusy,
+        t,
+        meceScan,
+        meceEvidence,
+        meceApply
+      }),
+    [
+      mode,
+      selectedNode?.id,
+      simulation.meceScanBundle,
+      simulation.meceEvidenceBundle?.results,
+      simulation.meceSelectedMods.size,
+      simulation.simBusy,
+      t,
+      meceScan,
+      meceEvidence,
+      meceApply
+    ]
+  );
+
+  const runSendChat = useCallback(async () => {
+    const raw = chat.draft.trim();
+    const modeJump = tryParseSlashModeOnlyLine(raw);
+    if (modeJump) {
+      setMode(modeJump);
+      chat.setDraft("");
+      return;
+    }
+    await sendChat();
+  }, [chat.draft, chat.setDraft, sendChat, setMode]);
 
   const discardDraft = useCallback(() => {
     clearSandbox();
     setError("");
   }, [clearSandbox]);
 
-  const addSkill = useCallback(() => {
-    const instruction = newSkillBody.trim();
-    if (!instruction) return;
-    setCustomSkills((prev) => [
-      ...prev,
-      {
-        id: `s_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-        name: newSkillName.trim() || t("custom_skill"),
-        instruction,
-        enabled: true
-      }
-    ]);
-    setNewSkillName("");
-    setNewSkillBody("");
-  }, [newSkillBody, newSkillName, t]);
-
-  const removeSkill = useCallback((id: string) => {
-    setCustomSkills((prev) => prev.filter((s) => s.id !== id));
-    setSkillDetailsOpen((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, []);
-
-  const toggleCustom = useCallback((id: string) => {
-    setCustomSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)));
-  }, []);
-
-  const toggleSkillDetails = useCallback((id: string) => {
-    setSkillDetailsOpen((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
-
-  const updateSkillName = useCallback((id: string, name: string) => {
-    setCustomSkills((prev) => prev.map((s) => (s.id === id ? { ...s, name: name.slice(0, 120) } : s)));
-  }, []);
-
-  const updateSkillInstruction = useCallback((id: string, instruction: string) => {
-    setCustomSkills((prev) => prev.map((s) => (s.id === id ? { ...s, instruction: instruction.slice(0, 8000) } : s)));
-  }, []);
-
-  const clearChat = useCallback(() => {
-    setMessages([]);
-    setError("");
-  }, []);
-
   const deactivateAssistant = useCallback(() => {
     closeAssistantSession();
     setError("");
-    setRtTranscript([]);
-    setRtProposal(null);
-    setRtConfirmApply(false);
-    setRtSteering("");
-  }, [closeAssistantSession]);
+    roundtable.resetOnAssistantClose();
+  }, [closeAssistantSession, roundtable.resetOnAssistantClose]);
 
-  const handleBsToggleScenario = useCallback((scenarioId: string) => {
-    setBsSelectedScenarioIds((prev) => {
-      const n = new Set(prev);
-      if (n.has(scenarioId)) n.delete(scenarioId);
-      else n.add(scenarioId);
-      return n;
-    });
-    setBsRunBundle(null);
-    setBsMitigationPick(new Set());
-  }, []);
+  const modeSegmentTooltips = useMemo(
+    () => ({
+      chat: t("assistant_mode_tip_chat"),
+      optimism: t("assistant_mode_tip_optimism"),
+      blackSwan: t("assistant_mode_tip_black_swan"),
+      mece: t("assistant_mode_tip_mece"),
+      roundtable: t("assistant_mode_tip_roundtable"),
+      counsel: t("assistant_mode_tip_counsel")
+    }),
+    [t]
+  );
 
-  const handleBsToggleMitigation = useCallback((key: string) => {
-    setBsMitigationPick((prev) => {
-      const n = new Set(prev);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      return n;
-    });
-  }, []);
-
-  const handleMeceToggleModification = useCallback((modificationId: string) => {
-    setMeceSelectedMods((prev) => {
-      const n = new Set(prev);
-      if (n.has(modificationId)) n.delete(modificationId);
-      else n.add(modificationId);
-      return n;
-    });
-    setMeceEvidenceBundle(null);
-  }, []);
-
-  const addRtPreset = useCallback((name: string) => {
-    const n = name.trim();
-    if (!n) return;
-    setRtPersonas((prev) => {
-      if (prev.some((p) => p.name.trim().toLowerCase() === n.toLowerCase())) return prev;
-      const id = `rtp_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-      return [...prev, { id, name: n, instruction: presetRoundtableInstruction(n) }];
-    });
-  }, []);
-
-  const addRtCustom = useCallback(() => {
-    const name = rtNewName.trim().slice(0, 120);
-    const instruction = rtNewInstruction.trim().slice(0, 4000);
-    if (!name || !instruction) return;
-    const id = `rtp_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    setRtPersonas((prev) => [...prev, { id, name, instruction }]);
-    setRtLib((prev) => {
-      if (prev.some((x) => x.name.trim().toLowerCase() === name.toLowerCase())) return prev;
-      return [...prev, { name, instruction }];
-    });
-    setRtNewName("");
-    setRtNewInstruction("");
-  }, [rtNewName, rtNewInstruction]);
-
-  const addRtFromLib = useCallback((name: string, instruction: string) => {
-    const n = name.trim();
-    const ins = instruction.trim();
-    if (!n || !ins) return;
-    setRtPersonas((prev) => {
-      if (prev.some((p) => p.name.trim().toLowerCase() === n.toLowerCase())) return prev;
-      const id = `rtp_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-      return [...prev, { id, name: n, instruction: ins.slice(0, 4000) }];
-    });
-  }, []);
-
-  const removeRtPersona = useCallback((id: string) => {
-    setRtPersonas((prev) => prev.filter((p) => p.id !== id));
-  }, []);
-
-  const clearRtTranscript = useCallback(() => {
-    setRtTranscript([]);
-    setRtProposal(null);
-    setRtConfirmApply(false);
-    setError("");
-  }, []);
-
-  const runSendChat = useCallback(async () => {
-    const raw = draft.trim();
-    if (raw) {
-      const m = raw.match(/^\s*\/(chat|optimism|blackswan|black-swan|mece|roundtable|counsel)\s*$/i);
-      if (m) {
-        const g = m[1].toLowerCase().replace("black-swan", "blackswan");
-        const nextMode: AssistantPanelMode =
-          g === "chat"
-            ? "chat"
-            : g === "optimism"
-              ? "optimism"
-              : g === "blackswan"
-                ? "blackSwan"
-                : g === "mece"
-                  ? "mece"
-                  : g === "counsel"
-                    ? "counsel"
-                    : "roundtable";
-        setMode(nextMode);
-        setDraft("");
-        return;
-      }
-    }
-    await sendChat();
-  }, [draft, sendChat]);
+  const simulationStackProps: AssistantPanelSimulationStackProps = useMemo(
+    () => ({
+      mode,
+      simReport: simulation.simReport,
+      simReportTitle: t("assistant_sim_report"),
+      branchFinancial: simulation.branchFinancial,
+      optimismMetricsAvailable: simulation.optimismMetricsAvailable,
+      optimismFocus: simulation.optimismFocus,
+      setOptimismFocus: simulation.setOptimismFocus,
+      currency: simulation.currency,
+      setCurrency: simulation.setCurrency,
+      optimismDeltaPct: simulation.optimismDeltaPct,
+      setOptimismDeltaPct: simulation.setOptimismDeltaPct,
+      optimismPreview: simulation.optimismPreview,
+      optimismAffected: simulation.optimismAffected,
+      simBusy: simulation.simBusy,
+      onApplyOptimism: runOptimismSimulation,
+      selectedNodeId: selectedNode?.id,
+      optimismBranchRootLabel: (selectedNode?.label?.trim() || selectedNode?.id) ?? "",
+      meterInputs: simulation.meterInputs,
+      setMeterInputs: simulation.setMeterInputs,
+      backendBase,
+      combinedGraphForOptimism: combined,
+      bsScenarios: simulation.bsScenarios,
+      bsSelectedScenarioIds: simulation.bsSelectedScenarioIds,
+      onToggleScenario: simulation.handleBsToggleScenario,
+      bsRunBundle: simulation.bsRunBundle,
+      bsMitigationPick: simulation.bsMitigationPick,
+      onToggleMitigation: simulation.handleBsToggleMitigation,
+      onBlackSwanScan: blackSwanScan,
+      onBlackSwanRun: blackSwanRun,
+      onBlackSwanApply: blackSwanApply,
+      onBlackSwanBackFromResults: simulation.handleBlackSwanBackFromResults,
+      meceScanBundle: simulation.meceScanBundle,
+      meceSelectedMods: simulation.meceSelectedMods,
+      onToggleMeceModification: simulation.handleMeceToggleModification,
+      meceEvidenceBundle: simulation.meceEvidenceBundle,
+      meceWebHints: simulation.meceWebHints,
+      meceWebBusyId: simulation.meceWebBusyId,
+      onMeceScan: meceScan,
+      onMeceEvidence: meceEvidence,
+      onMeceWebSearchForMod: meceWebSearchForMod,
+      onMeceApply: meceApply,
+      meceNodeLabelById: simulation.meceNodeLabelById,
+      onMeceFocusCanvasNode: simulation.handleMeceFocusCanvasNode,
+      rtPersonas: roundtable.rtPersonas,
+      rtLib: roundtable.rtLib,
+      rtNewName: roundtable.rtNewName,
+      setRtNewName: roundtable.setRtNewName,
+      rtNewInstruction: roundtable.rtNewInstruction,
+      setRtNewInstruction: roundtable.setRtNewInstruction,
+      onAddRtPreset: roundtable.addRtPreset,
+      onAddFromLib: roundtable.addRtFromLib,
+      onRemoveRtPersona: roundtable.removeRtPersona,
+      onAddRtCustom: roundtable.addRtCustom,
+      rtDiscussionStarted:
+        mode === "roundtable"
+          ? roundtable.rtTranscript.length > 0 || Boolean(roundtable.rtProposal) || roundtable.rtRoundBusy
+          : undefined
+    }),
+    [
+      mode,
+      simulation.simReport,
+      t,
+      simulation.branchFinancial,
+      simulation.optimismMetricsAvailable,
+      simulation.optimismFocus,
+      simulation.setOptimismFocus,
+      simulation.currency,
+      simulation.setCurrency,
+      simulation.optimismDeltaPct,
+      simulation.setOptimismDeltaPct,
+      simulation.optimismPreview,
+      simulation.optimismAffected,
+      simulation.simBusy,
+      runOptimismSimulation,
+      selectedNode?.id,
+      selectedNode?.label,
+      simulation.meterInputs,
+      simulation.setMeterInputs,
+      backendBase,
+      combined,
+      simulation.bsScenarios,
+      simulation.bsSelectedScenarioIds,
+      simulation.handleBsToggleScenario,
+      simulation.bsRunBundle,
+      simulation.bsMitigationPick,
+      simulation.handleBsToggleMitigation,
+      blackSwanScan,
+      blackSwanRun,
+      blackSwanApply,
+      simulation.handleBlackSwanBackFromResults,
+      simulation.meceScanBundle,
+      simulation.meceSelectedMods,
+      simulation.handleMeceToggleModification,
+      simulation.meceEvidenceBundle,
+      simulation.meceWebHints,
+      simulation.meceWebBusyId,
+      meceScan,
+      meceEvidence,
+      meceWebSearchForMod,
+      meceApply,
+      simulation.meceNodeLabelById,
+      simulation.handleMeceFocusCanvasNode,
+      roundtable.rtPersonas,
+      roundtable.rtLib,
+      roundtable.rtNewName,
+      roundtable.setRtNewName,
+      roundtable.rtNewInstruction,
+      roundtable.setRtNewInstruction,
+      roundtable.addRtPreset,
+      roundtable.addRtFromLib,
+      roundtable.removeRtPersona,
+      roundtable.addRtCustom,
+      roundtable.rtTranscript.length,
+      roundtable.rtProposal,
+      roundtable.rtRoundBusy
+    ]
+  );
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/95">
-      <AssistantPanelHeader title={t("assistant_title")} closeLabel={t("assistant_close_session")} onClose={deactivateAssistant} />
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-        {/* Left ~70%: mode, transcript + simulations, primary actions */}
-        <div className="flex min-h-0 min-w-0 w-[70%] flex-shrink-0 flex-col border-r border-slate-200 dark:border-slate-800">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+      <AssistantPanelHeader
+        title={t("assistant_title")}
+        closeLabel={t("assistant_close_session")}
+        onClose={deactivateAssistant}
+        center={
           <AssistantPanelModeSegment
+            embedded
             mode={mode}
             onModeChange={setMode}
+            modeTooltips={modeSegmentTooltips}
             labels={{
               chat: t("mode_chat"),
               optimism: t("mode_optimism"),
@@ -601,144 +371,12 @@ export default function AssistantPanel() {
               counsel: t("mode_counsel")
             }}
           />
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
-            {sandboxHasDrafts ? (
-              <AssistantSandboxDraftBanner
-                line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
-                discardLabel={t("assistant_discard_draft")}
-                onDiscard={discardDraft}
-              />
-            ) : null}
+        }
+      />
 
-            {mode === "counsel" ? (
-              <AssistantCounselFlow
-                backendBase={backendBase}
-                projectId={activeProjectId}
-                selectedNodeId={selectedNode?.id}
-                mainGraph={mainGraph}
-                sandboxGraph={sandboxGraph}
-                sourceFileIds={selectedSourceFileIds}
-                payloadSkills={payloadSkills}
-                builtinSkills={builtinPayload}
-                sandboxMode={sandboxMode}
-                loadMainGraph={loadMainGraph}
-                rtLib={rtLib}
-                onPersistPersonaToLib={(name, instruction) => {
-                  setRtLib((prev) => {
-                    if (prev.some((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase())) return prev;
-                    return [...prev, { name: name.trim().slice(0, 120), instruction: instruction.trim().slice(0, 4000) }];
-                  });
-                }}
-                onUpdatePersonaInLib={(name, instruction) => {
-                  setRtLib((prev) => {
-                    const i = prev.findIndex(
-                      (x) => x.name.trim().toLowerCase() === name.trim().toLowerCase()
-                    );
-                    if (i < 0) return prev;
-                    const next = [...prev];
-                    next[i] = {
-                      ...next[i],
-                      instruction: instruction.trim().slice(0, 8000)
-                    };
-                    return next;
-                  });
-                }}
-                onRemovePersonaFromLib={(name) => {
-                  const key = name.trim().toLowerCase();
-                  setRtLib((prev) => prev.filter((x) => x.name.trim().toLowerCase() !== key));
-                }}
-              />
-            ) : (
-              <>
-                <AssistantTranscriptBlock
-                  listRef={listRef}
-                  isRoundtable={mode === "roundtable"}
-                  messages={messages}
-                  chatBusy={chatBusy}
-                  rtTranscript={rtTranscript}
-                  rtRoundBusy={rtRoundBusy}
-                  rtProposal={rtProposal}
-                  onClearChat={clearChat}
-                  onClearRoundtable={clearRtTranscript}
-                />
-
-                <AssistantPanelSimulationStack
-                  mode={mode}
-                  simReport={simReport}
-                  simReportTitle={t("assistant_sim_report")}
-                  branchFinancial={branchFinancial}
-                  optimismMetricsAvailable={optimismMetricsAvailable}
-                  optimismFocus={optimismFocus}
-                  setOptimismFocus={setOptimismFocus}
-                  currency={currency}
-                  setCurrency={setCurrency}
-                  optimismDeltaPct={optimismDeltaPct}
-                  setOptimismDeltaPct={setOptimismDeltaPct}
-                  optimismPreview={optimismPreview}
-                  optimismAffected={optimismAffected}
-                  simBusy={simBusy}
-                  onApplyOptimism={runOptimismSimulation}
-                  selectedNodeId={selectedNode?.id}
-                  bsScenarios={bsScenarios}
-                  bsSelectedScenarioIds={bsSelectedScenarioIds}
-                  onToggleScenario={handleBsToggleScenario}
-                  bsRunBundle={bsRunBundle}
-                  bsMitigationPick={bsMitigationPick}
-                  onToggleMitigation={handleBsToggleMitigation}
-                  onBlackSwanScan={blackSwanScan}
-                  onBlackSwanRun={blackSwanRun}
-                  onBlackSwanApply={blackSwanApply}
-                  meceScanBundle={meceScanBundle}
-                  meceSelectedMods={meceSelectedMods}
-                  onToggleMeceModification={handleMeceToggleModification}
-                  meceEvidenceBundle={meceEvidenceBundle}
-                  meceWebHints={meceWebHints}
-                  meceWebBusyId={meceWebBusyId}
-                  onMeceScan={meceScan}
-                  onMeceEvidence={meceEvidence}
-                  onMeceWebSearchForMod={meceWebSearchForMod}
-                  onMeceApply={meceApply}
-                  rtPersonas={rtPersonas}
-                  rtLib={rtLib}
-                  rtNewName={rtNewName}
-                  setRtNewName={setRtNewName}
-                  rtNewInstruction={rtNewInstruction}
-                  setRtNewInstruction={setRtNewInstruction}
-                  onAddRtPreset={addRtPreset}
-                  onAddFromLib={addRtFromLib}
-                  onRemoveRtPersona={removeRtPersona}
-                  onAddRtCustom={addRtCustom}
-                />
-              </>
-            )}
-          </div>
-
-          {mode === "counsel" ? null : (
-          <AssistantPanelLeftActions
-            error={error}
-            mode={mode}
-            selectedNodeId={selectedNode?.id}
-            rtRoundBusy={rtRoundBusy}
-            rtPersonasCount={rtPersonas.length}
-            onRunRoundtableRound={runRoundtableRound}
-            rtProposeBusy={rtProposeBusy}
-            rtTranscriptCount={rtTranscript.length}
-            onProposeRoundtable={proposeRoundtable}
-            hasRoundtableProposal={Boolean(rtProposal)}
-            rtConfirmApply={rtConfirmApply}
-            onRtConfirmApplyChange={setRtConfirmApply}
-            rtApplyBusy={rtApplyBusy}
-            onApplyRoundtablePatch={applyRoundtablePatch}
-            applyBusy={applyBusy}
-            messagesCount={messages.length}
-            onApplyToMindmap={applyToMindmap}
-          />
-          )}
-        </div>
-
-        {/* Right ~30%: sources, skills, composer */}
-        <div className="flex min-h-0 min-w-0 w-[30%] flex-shrink-0 flex-col">
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden p-2">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+        <aside className="flex w-[25%] min-w-[11rem] max-w-sm flex-shrink-0 flex-col overflow-hidden bg-black/[0.035] dark:bg-white/[0.05]">
+          <div className="min-h-0 flex-1 space-y-8 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-4">
             <AssistantSessionSourcesCard
               sessionLabel={t("assistant_session")}
               targetNodeLabel={t("assistant_target_node")}
@@ -748,14 +386,14 @@ export default function AssistantPanel() {
               webQueryLabel={t("assistant_web_query")}
               webQueryHelp={t("assistant_web_query_help")}
               webQueryPlaceholder={t("assistant_web_query_ph")}
-              webSearchQuery={webSearchQuery}
-              onWebSearchQueryChange={setWebSearchQuery}
-              activeProjectId={activeProjectId}
-              ingestBusy={ingestWebBusy}
+              webSearchQuery={sources.webSearchQuery}
+              onWebSearchQueryChange={sources.setWebSearchQuery}
+              activeProjectId={projectId}
+              ingestBusy={sources.ingestWebBusy}
               ingestCta={t("assistant_web_ingest_cta")}
               ingestBusyLabel={t("assistant_web_ingest_busy")}
               ingestHint={t("assistant_web_ingest_hint")}
-              onIngestWeb={ingestWebToSources}
+              onIngestWeb={sources.ingestWebToSources}
               sourceFilesLabel={t("assistant_source_files")}
               sourceFilesHint={t("assistant_source_files_hint")}
               sourceFilesNoProject={t("assistant_source_files_no_project")}
@@ -764,50 +402,175 @@ export default function AssistantPanel() {
               selectAllSources={t("assistant_select_all_sources")}
               selectNoSources={t("assistant_select_no_sources")}
               selectionCount={(n) => t("assistant_source_files_selection_count", { n })}
-              projectFilesLoadError={projectFilesLoadError}
-              projectFiles={projectFiles}
-              selectedSourceFileIds={selectedSourceFileIds}
-              onSelectedSourceFileIdsChange={setSelectedSourceFileIds}
+              projectFilesLoadError={sources.projectFilesLoadError}
+              projectFiles={sources.projectFiles}
+              selectedSourceFileIds={sources.selectedSourceFileIds}
+              onSelectedSourceFileIdsChange={sources.setSelectedSourceFileIds}
             />
             <AssistantSkillsBlock
               builtinWebSearch={skills.webSearch}
               builtinFinancialAnalyst={skills.financialAnalyst}
               onToggleBuiltinSkill={toggleSkill}
-              customSkills={customSkills}
-              skillDetailsOpen={skillDetailsOpen}
-              onToggleSkillDetails={toggleSkillDetails}
-              onToggleCustomSkill={toggleCustom}
-              onUpdateSkillName={updateSkillName}
-              onUpdateSkillInstruction={updateSkillInstruction}
-              onRemoveSkill={removeSkill}
-              skillImportUrl={skillImportUrl}
-              onSkillImportUrlChange={(value) => {
-                setSkillImportUrl(value);
-                if (skillImportMessage) setSkillImportMessage("");
-              }}
-              skillImportBusy={skillImportBusy}
-              skillImportMessage={skillImportMessage}
+              customSkills={skillsVertical.customSkills}
+              skillDetailsOpen={skillsVertical.skillDetailsOpen}
+              onToggleSkillDetails={skillsVertical.toggleSkillDetails}
+              onToggleCustomSkill={skillsVertical.toggleCustom}
+              onUpdateSkillName={skillsVertical.updateSkillName}
+              onUpdateSkillInstruction={skillsVertical.updateSkillInstruction}
+              onRemoveSkill={skillsVertical.removeSkill}
+              skillImportUrl={skillsVertical.skillImportUrl}
+              onSkillImportUrlChange={skillsVertical.onSkillImportUrlChange}
+              skillImportBusy={skillsVertical.skillImportBusy}
+              skillImportMessage={skillsVertical.skillImportMessage}
               onFetchSkillFromUrl={fetchSkillFromUrl}
-              newSkillName={newSkillName}
-              onNewSkillNameChange={setNewSkillName}
-              newSkillBody={newSkillBody}
-              onNewSkillBodyChange={setNewSkillBody}
-              onAddSkill={addSkill}
+              newSkillName={skillsVertical.newSkillName}
+              onNewSkillNameChange={skillsVertical.setNewSkillName}
+              newSkillBody={skillsVertical.newSkillBody}
+              onNewSkillBodyChange={skillsVertical.setNewSkillBody}
+              onAddSkill={skillsVertical.addSkill}
             />
           </div>
-          {mode === "counsel" ? null : (
-          <AssistantPanelRightComposer
-            mode={mode}
-            rtSteering={rtSteering}
-            onRtSteeringChange={setRtSteering}
-            rtRoundBusy={rtRoundBusy}
-            draft={draft}
-            onDraftChange={setDraft}
-            chatBusy={chatBusy}
-            onSendChat={runSendChat}
-          />
+        </aside>
+
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-slate-950">
+          {mode === "counsel" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6">
+              {sandboxHasDrafts ? (
+                <AssistantSandboxDraftBanner
+                  line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
+                  discardLabel={t("assistant_discard_draft")}
+                  onDiscard={discardDraft}
+                />
+              ) : null}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <AssistantCounselFlow
+                  backendBase={backendBase}
+                  projectId={projectId}
+                  selectedNodeId={selectedNode?.id}
+                  mainGraph={mainGraph}
+                  sandboxGraph={sandboxGraph}
+                  sourceFileIds={sources.selectedSourceFileIds}
+                  payloadSkills={payloadSkills}
+                  builtinSkills={builtinPayload}
+                  sandboxMode={sandboxMode}
+                  loadMainGraph={loadMainGraph}
+                  rtLib={roundtable.rtLib}
+                  onPersistPersonaToLib={(name, instruction) => {
+                    roundtable.setRtLib((prev) => {
+                      if (prev.some((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase())) return prev;
+                      return [...prev, { name: name.trim().slice(0, 120), instruction: instruction.trim().slice(0, 4000) }];
+                    });
+                  }}
+                  onUpdatePersonaInLib={(name, instruction) => {
+                    roundtable.setRtLib((prev) => {
+                      const i = prev.findIndex((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
+                      if (i < 0) return prev;
+                      const next = [...prev];
+                      next[i] = {
+                        ...next[i],
+                        instruction: instruction.trim().slice(0, 8000)
+                      };
+                      return next;
+                    });
+                  }}
+                  onRemovePersonaFromLib={(name) => {
+                    const key = name.trim().toLowerCase();
+                    roundtable.setRtLib((prev) => prev.filter((x) => x.name.trim().toLowerCase() !== key));
+                  }}
+                />
+              </div>
+            </div>
+          ) : mode === "roundtable" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div
+                ref={chat.listRef}
+                className="mm-assistant-thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6"
+              >
+                {sandboxHasDrafts ? (
+                  <AssistantSandboxDraftBanner
+                    line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
+                    discardLabel={t("assistant_discard_draft")}
+                    onDiscard={discardDraft}
+                  />
+                ) : null}
+                <AssistantTranscriptBlock
+                  embedInParentScroll
+                  isRoundtable
+                  messages={chat.messages}
+                  chatBusy={chat.chatBusy}
+                  rtTranscript={roundtable.rtTranscript}
+                  rtRoundBusy={roundtable.rtRoundBusy}
+                  rtProposal={roundtable.rtProposal}
+                  onClearChat={chat.clearChat}
+                  onClearRoundtable={roundtable.clearRtTranscript}
+                  rtPersonas={roundtable.rtPersonas}
+                  onRemoveRtPersona={roundtable.removeRtPersona}
+                  rtGraphNodeIds={rtGraphNodeIds}
+                />
+              </div>
+              <AssistantPanelSimulationStack {...simulationStackProps} />
+            </div>
+          ) : (
+            <div className="mm-assistant-thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-6">
+              {sandboxHasDrafts ? (
+                <AssistantSandboxDraftBanner
+                  line={t("assistant_draft_line", { nodes: sandboxGraph.nodes.length, edges: sandboxGraph.edges.length })}
+                  discardLabel={t("assistant_discard_draft")}
+                  onDiscard={discardDraft}
+                />
+              ) : null}
+              <div className="space-y-8">
+                {mode === "chat" ? (
+                  <section className="space-y-2">
+                    <AssistantTranscriptBlock
+                      listRef={chat.listRef}
+                      isRoundtable={false}
+                      messages={chat.messages}
+                      chatBusy={chat.chatBusy}
+                      rtTranscript={roundtable.rtTranscript}
+                      rtRoundBusy={roundtable.rtRoundBusy}
+                      rtProposal={roundtable.rtProposal}
+                      onClearChat={chat.clearChat}
+                      onClearRoundtable={roundtable.clearRtTranscript}
+                      onSlashModeJump={setMode}
+                    />
+                  </section>
+                ) : null}
+
+                <AssistantPanelSimulationStack {...simulationStackProps} />
+              </div>
+            </div>
           )}
-        </div>
+
+          {mode === "counsel" ? null : (
+            <AssistantWorkspaceFooter
+              error={error}
+              mode={mode}
+              selectedNodeId={selectedNode?.id}
+              rtRoundBusy={roundtable.rtRoundBusy}
+              rtPersonasCount={roundtable.rtPersonas.length}
+              onRunRoundtableRound={runRoundtableRound}
+              rtProposeBusy={roundtable.rtProposeBusy}
+              rtTranscriptCount={roundtable.rtTranscript.length}
+              onProposeRoundtable={proposeRoundtable}
+              hasRoundtableProposal={Boolean(roundtable.rtProposal)}
+              rtConfirmApply={roundtable.rtConfirmApply}
+              onRtConfirmApplyChange={roundtable.setRtConfirmApply}
+              rtApplyBusy={roundtable.rtApplyBusy}
+              onApplyRoundtablePatch={applyRoundtablePatch}
+              applyBusy={chat.applyBusy}
+              messagesCount={chat.messages.length}
+              onApplyToMindmap={applyToMindmap}
+              rtSteering={roundtable.rtSteering}
+              onRtSteeringChange={roundtable.setRtSteering}
+              draft={chat.draft}
+              onDraftChange={chat.setDraft}
+              chatBusy={chat.chatBusy}
+              onSendChat={runSendChat}
+              meceFooterPrimary={meceFooterPrimary}
+            />
+          )}
+        </main>
       </div>
     </div>
   );

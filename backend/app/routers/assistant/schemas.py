@@ -233,6 +233,40 @@ class OptimismSimRequest(BaseModel):
     affected_nodes: List[OptimismAffectedNodeIn] = Field(default_factory=list)
 
 
+class MeterSnapshotIn(BaseModel):
+    tam_total: Optional[float] = None
+    target_segment_pct: Optional[float] = None
+    arpa_year: Optional[float] = None
+    customers_total: Optional[float] = None
+    penetration_pct: Optional[float] = None
+    baseline_som_override: Optional[float] = None
+
+
+class OptimismBaselineExplainRequest(BaseModel):
+    branch_root_id: str = Field(..., min_length=1)
+    full_nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    full_edges: List[Dict[str, Any]] = Field(default_factory=list)
+    currency: str = Field(default="USD", max_length=8)
+    meter: MeterSnapshotIn = Field(default_factory=MeterSnapshotIn)
+    derived_tam: Optional[float] = None
+    derived_som: Optional[float] = None
+    derived_arr: Optional[float] = None
+
+
+class OptimismDriverNoteOut(BaseModel):
+    field: str = Field(default="", max_length=64)
+    note: str = Field(default="", max_length=2000)
+    evidence_node_id: Optional[str] = Field(default=None, max_length=128)
+
+
+class OptimismBaselineExplainResponse(BaseModel):
+    summary: str = Field(default="", max_length=12000)
+    computation_steps: List[str] = Field(default_factory=list)
+    driver_notes: List[OptimismDriverNoteOut] = Field(default_factory=list)
+    caveats: List[str] = Field(default_factory=list)
+    confidence: str = Field(default="medium", max_length=16)
+
+
 class SimResponse(BaseModel):
     mindmap: Dict[str, Any]
     report: str
