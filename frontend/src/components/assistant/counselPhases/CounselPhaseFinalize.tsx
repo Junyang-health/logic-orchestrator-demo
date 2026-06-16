@@ -27,6 +27,14 @@ export default function CounselPhaseFinalize(props: CounselPhaseFinalizeProps) {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-white/55 via-cyan-50/25 to-transparent p-4 backdrop-blur-[18px] dark:border-cyan-500/15 dark:from-slate-900/50 dark:via-cyan-950/20 dark:to-transparent">
+        <div className="font-mono text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+          Recommended direction
+        </div>
+        <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-800 dark:text-slate-100">
+          {finalizeResult.recommendation}
+        </p>
+      </div>
       <div className="font-mono text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
         {t("counsel_master_strategy")}
       </div>
@@ -47,16 +55,16 @@ export default function CounselPhaseFinalize(props: CounselPhaseFinalizeProps) {
           )}
         </div>
       </div>
-      <details className="rounded-xl border border-slate-200/60 bg-white/30 dark:border-slate-600/50 dark:bg-slate-900/30">
-        <summary className="cursor-pointer px-3 py-2 font-mono text-[8px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          {t("counsel_recommendation_detail")}
-        </summary>
-        <div className="border-t border-slate-200/50 px-3 py-2 dark:border-slate-700/50">
-          <p className="whitespace-pre-wrap text-[10px] leading-relaxed text-slate-700 dark:text-slate-200">
-            {finalizeResult.recommendation}
-          </p>
+      <div className="rounded-xl border border-slate-200/60 bg-white/30 p-3 dark:border-slate-600/50 dark:bg-slate-900/30">
+        <div className="font-mono text-[8px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          What changes after apply
         </div>
-      </details>
+        <div className="mt-2 text-[10px] leading-relaxed text-slate-700 dark:text-slate-200">
+          {strategicPatchTouches > 0
+            ? `The selected branch will receive ${strategicPatchTouches} structural change${strategicPatchTouches === 1 ? "" : "s"}, and the minutes will be saved to the current project.`
+            : "The recommendation is mostly narrative. Applying will still save the meeting minutes to the current project."}
+        </div>
+      </div>
       <CounselPatchImpactTree patch={finalizeResult.patch} />
       <button
         type="button"

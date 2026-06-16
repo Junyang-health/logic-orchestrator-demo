@@ -48,3 +48,5 @@ backend/data/projects/facai/
 backend/data/projects/ot-bp/
 backend/data/projects/test_no-source/
 backend/data/projects/tcm-test/
+backend/data/slide_jobs.sqlite
+backend/data/slide_sessions/

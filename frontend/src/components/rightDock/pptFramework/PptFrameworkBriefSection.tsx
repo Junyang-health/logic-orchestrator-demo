@@ -15,6 +15,7 @@ type Props = {
   onStyle: (v: string) => void;
   enrichBatchSize: number;
   onEnrichBatchSize: (n: number) => void;
+  showAdvanced?: boolean;
 };
 
 export default function PptFrameworkBriefSection(props: Props) {
@@ -31,7 +32,8 @@ export default function PptFrameworkBriefSection(props: Props) {
     style,
     onStyle,
     enrichBatchSize,
-    onEnrichBatchSize
+    onEnrichBatchSize,
+    showAdvanced = true
   } = props;
 
   return (
@@ -69,22 +71,26 @@ export default function PptFrameworkBriefSection(props: Props) {
             onChange={(e) => onPageCount(Math.min(40, Math.max(1, Number(e.target.value) || 8)))}
           />
         </div>
-        <div className="w-full min-w-[6.5rem] sm:w-28">
-          <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {t("ppt_enrich_batch")}
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={8}
-            className="ios-field w-full text-xs"
-            value={enrichBatchSize}
-            onChange={(e) => onEnrichBatchSize(Math.min(8, Math.max(1, Number(e.target.value) || 3)))}
-            title={t("ppt_enrich_batch_help")}
-          />
-        </div>
+        {showAdvanced ? (
+          <div className="w-full min-w-[6.5rem] sm:w-28">
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {t("ppt_enrich_batch")}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              className="ios-field w-full text-xs"
+              value={enrichBatchSize}
+              onChange={(e) => onEnrichBatchSize(Math.min(8, Math.max(1, Number(e.target.value) || 3)))}
+              title={t("ppt_enrich_batch_help")}
+            />
+          </div>
+        ) : null}
       </div>
-      <p className="mb-2 text-[9px] leading-snug text-slate-500 dark:text-slate-400">{t("ppt_enrich_batch_help")}</p>
+      {showAdvanced ? (
+        <p className="mb-2 text-[9px] leading-snug text-slate-500 dark:text-slate-400">{t("ppt_enrich_batch_help")}</p>
+      ) : null}
       <div className="mb-2">
         <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
           {t("ppt_deck_style_label")}

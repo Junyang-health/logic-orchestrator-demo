@@ -79,7 +79,8 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
   const allIds = useMemo(() => combined.nodes.map((n) => n.id), [combined.nodes]);
 
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
-  const [exportTab, setExportTab] = useState<"mindmap" | "ppt" | "word">("mindmap");
+  const exportTab = useUiStore((s) => s.exportPanelTab);
+  const setExportTab = useUiStore((s) => s.setExportPanelTab);
   const [format, setFormat] = useState<"markdown" | "jpeg">("markdown");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -87,6 +88,10 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
   const selectedList = useMemo(
     () => Object.entries(selectedIds).filter(([, on]) => on).map(([id]) => id),
     [selectedIds]
+  );
+  const currentScopeGraph = useMemo(
+    () => (selectedList.length > 0 ? mergeBranchSubgraphs(selectedList, combined) : combined),
+    [selectedList, combined]
   );
 
   const total = allIds.length;
@@ -202,8 +207,14 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
   return (
     <div className="space-y-4 text-sm text-slate-800 dark:text-slate-100">
       <div>
-        <div className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("export_title")}</div>
-        <div className="mt-2 ios-segment w-full flex-wrap">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+          Deliver
+        </div>
+        <div className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-50">{t("export_title")}</div>
+        <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+          Choose the output first, confirm the current scope, then refine branches only if needed.
+        </p>
+        <div className="mt-3 ios-segment w-full flex-wrap">
           <button
             type="button"
             className={[
@@ -244,18 +255,82 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
             {t("export_tab_word")}
           </button>
         </div>
-        {exportTab === "mindmap" ? (
-          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_intro")}</p>
-        ) : exportTab === "ppt" ? (
-          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_ppt_subtitle")}</p>
-        ) : (
-          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_word_subtitle")}</p>
-        )}
       </div>
 
-      <div>
-        <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{t("export_branches")}</div>
-        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border ios-divider bg-slate-50/90 px-2 py-2 dark:bg-slate-900/50">
+      <section className="rounded-2xl border border-slate-200/70 bg-white/55 p-3 dark:border-slate-700/60 dark:bg-slate-900/35">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Current scope
+            </div>
+            <div className="mt-1 text-xs text-slate-700 dark:text-slate-200">
+              {selectedCount > 0 ? `${selectedCount} branches selected` : "No explicit branch selection yet"}
+            </div>
+          </div>
+          <div className="rounded-full bg-slate-200/75 px-2.5 py-1 text-[9px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            {exportTab === "mindmap" ? "Mind map export" : exportTab === "ppt" ? "Deck export" : "Word export"}
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{selectedList.length}</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">branches</div>
+          </div>
+          <div className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{currentScopeGraph.nodes.length}</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">nodes</div>
+          </div>
+          <div className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{props.graph ? "Live" : "Static"}</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">canvas</div>
+          </div>
+        </div>
+        {exportTab === "mindmap" ? (
+          <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_intro")}</p>
+        ) : exportTab === "ppt" ? (
+          <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_ppt_subtitle")}</p>
+        ) : (
+          <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_word_subtitle")}</p>
+        )}
+      </section>
+
+      {exportTab === "mindmap" ? (
+        <section className="rounded-2xl border border-slate-200/70 bg-white/55 p-3 dark:border-slate-700/60 dark:bg-slate-900/35">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Output format
+          </div>
+          <div className="ios-segment w-full">
+            <button
+              type="button"
+              className={[
+                "ios-segment-item flex-1 text-[11px]",
+                format === "markdown" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+              ].join(" ")}
+              onClick={() => setFormat("markdown")}
+            >
+              {t("export_markdown")}
+            </button>
+            <button
+              type="button"
+              className={[
+                "ios-segment-item flex-1 text-[11px]",
+                format === "jpeg" ? "ios-segment-item-active" : "ios-segment-item-inactive"
+              ].join(" ")}
+              onClick={() => setFormat("jpeg")}
+            >
+              {t("export_jpeg")}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <details className="rounded-2xl border border-slate-200/70 bg-white/45 p-3 dark:border-slate-700/60 dark:bg-slate-900/30">
+        <summary className="cursor-pointer select-none text-xs font-semibold text-slate-800 dark:text-slate-100">
+          Refine scope
+        </summary>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{t("export_branches")}</div>
+          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border ios-divider bg-slate-50/90 px-2 py-2 dark:bg-slate-900/50">
           <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-800 dark:text-slate-100">
             <input
               ref={masterRef}
@@ -325,35 +400,8 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
         <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
           {t("export_nodes_in_sel", { n: selectedList.length })}
         </div>
-      </div>
-
-      {exportTab === "mindmap" ? (
-        <div>
-          <div className="mb-2 text-xs font-semibold text-slate-700 dark:text-slate-200">{t("export_format")}</div>
-          <div className="ios-segment w-full">
-            <button
-              type="button"
-              className={[
-                "ios-segment-item flex-1 text-[11px]",
-                format === "markdown" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setFormat("markdown")}
-            >
-              {t("export_markdown")}
-            </button>
-            <button
-              type="button"
-              className={[
-                "ios-segment-item flex-1 text-[11px]",
-                format === "jpeg" ? "ios-segment-item-active" : "ios-segment-item-inactive"
-              ].join(" ")}
-              onClick={() => setFormat("jpeg")}
-            >
-              {t("export_jpeg")}
-            </button>
-          </div>
         </div>
-      ) : null}
+      </details>
 
       {exportTab === "mindmap" && error ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-100">
@@ -364,7 +412,7 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
       {exportTab === "mindmap" ? (
         <button
           type="button"
-          className="ios-button-primary w-full py-2 text-sm font-semibold disabled:opacity-50"
+          className="ios-button-primary w-full py-2.5 text-sm font-semibold disabled:opacity-50"
           disabled={busy || combined.nodes.length === 0}
           onClick={runExport}
         >

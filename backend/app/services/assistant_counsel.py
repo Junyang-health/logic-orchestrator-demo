@@ -40,7 +40,9 @@ Schema:
 
 Rules:
 - You have a budget: at most 3 questions from you in this phase total (the user message states how many you already asked).
-- If you must ask another question and budget allows, return a single sharp "question" string.
+- Ask from your assigned inquiry angle and from the worldview in your persona instruction.
+- Do not repeat another council member's question. If your angle is already covered well, ask a sharper follow-up from your angle or return question null.
+- If you must ask another question and budget allows, return a single sharp "question" string that names a concrete missing fact, tradeoff, constraint, or decision criterion.
 - If you have no further questions, or budget is exhausted, return question null.
 - Questions only; no lecturing.
 """
@@ -242,37 +244,203 @@ def _counsel_pair_transcript(rows: list[dict[str, Any]], *, max_chars: int = 120
 def counsel_fact_next_question(
     *,
     llm: LlmClient,
+    persona_id: str,
     persona_name: str,
     persona_instruction: str,
     problem_summary: str,
     questions_asked_so_far: int,
     thread: list[dict[str, Any]],
     source_context: str | None,
+    counsel_roster: list[dict[str, Any]] | None = None,
+    all_threads: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     budget_left = max(0, 3 - int(questions_asked_so_far))
+    roster = counsel_roster or []
+    shared_questions = _counsel_fact_shared_questions(all_threads or {}, persona_id=persona_id, counsel_roster=roster)
+    focus = _counsel_fact_angle(
+        persona_id=persona_id,
+        persona_name=persona_name,
+        persona_instruction=persona_instruction,
+        counsel_roster=roster,
+    )
     lines = [
         f"Persona name: {persona_name}",
         f"Persona instruction: {persona_instruction}",
+        f"Assigned inquiry angle: {focus}",
         "",
         f"Agreed problem summary:\n{problem_summary.strip()}",
         "",
         f"Questions you already asked in this phase: {questions_asked_so_far} (max 3; you may ask at most {budget_left} more).",
+        "",
+        "Council roster and intended diversity:",
+        _counsel_fact_roster(roster),
+        "",
+        "Questions already asked by the whole council:",
+        shared_questions,
         "",
         "Thread (you / user):",
         _counsel_fact_thread(thread),
     ]
     if source_context:
         lines.extend(["", "Sources (truncated):", source_context[:20000]])
-    data = llm.generate_json(system=COUNSEL_FACT_SYSTEM, user="\n".join(lines), max_output_tokens=512)
+    prompt = "\n".join(lines)
+    data = llm.generate_json(system=COUNSEL_FACT_SYSTEM, user=prompt, max_output_tokens=512)
+    qs = _extract_fact_question(data, budget_left=budget_left)
+    if not qs:
+        return {"question": None}
+    existing_questions = _fact_question_texts(all_threads or {})
+    if _is_repeated_fact_question(qs, existing_questions):
+        retry_prompt = (
+            prompt
+            + "\n\nYour previous draft was too similar to a question already asked. "
+            + "Ask a clearly different question from your assigned inquiry angle, or return null if nothing distinct remains."
+        )
+        retry_data = llm.generate_json(system=COUNSEL_FACT_SYSTEM, user=retry_prompt, max_output_tokens=512)
+        retry_qs = _extract_fact_question(retry_data, budget_left=budget_left)
+        if not retry_qs or _is_repeated_fact_question(retry_qs, existing_questions):
+            return {"question": None}
+        qs = retry_qs
+    return {"question": qs}
+
+
+def _extract_fact_question(data: Any, *, budget_left: int) -> str | None:
     if not isinstance(data, dict):
         raise ValueError("LLM did not return an object")
     q = data.get("question")
-    if q is None:
-        return {"question": None}
+    if q is None or budget_left <= 0:
+        return None
     qs = str(q).strip()
-    if not qs or budget_left <= 0:
-        return {"question": None}
-    return {"question": qs}
+    return qs or None
+
+
+def _counsel_fact_roster(counsel_roster: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for idx, p in enumerate(counsel_roster, start=1):
+        pid = str(p.get("id") or "").strip()
+        name = str(p.get("name") or "").strip()
+        instruction = str(p.get("instruction") or "").strip()
+        if not name:
+            continue
+        angle = _counsel_fact_angle(
+            persona_id=pid,
+            persona_name=name,
+            persona_instruction=instruction,
+            counsel_roster=counsel_roster,
+        )
+        lines.append(f"{idx}. {name}: {angle}")
+    return "\n".join(lines) or "(not provided)"
+
+
+def _counsel_fact_angle(
+    *,
+    persona_id: str,
+    persona_name: str,
+    persona_instruction: str,
+    counsel_roster: list[dict[str, Any]],
+) -> str:
+    hay = f"{persona_name} {persona_instruction}".lower()
+    named_angles = [
+        (("investor", "munger", "buffett", "dalio", "naval", "market", "risk", "finance"), "economics, incentives, downside exposure, capital/time cost, and decision thresholds"),
+        (("jobs", "design", "customer", "product", "ux", "brand"), "user experience, adoption friction, product taste, positioning, and what must feel simple"),
+        (("musk", "engineer", "karpathy", "ilya", "technical", "system", "scale", "ai"), "technical bottlenecks, scaling constraints, architecture, speed, and first-principles assumptions"),
+        (("graham", "startup", "founder", "growth", "startup"), "customer pain, founder-market fit, early traction, distribution, and the smallest testable wedge"),
+        (("taleb", "black swan", "fragile", "antifragile", "tail"), "fragility, hidden asymmetry, ruin risk, optionality, and stress scenarios"),
+        (("feynman", "scientist", "physics", "explain", "clarity"), "definitions, causal mechanism, evidence quality, and whether the claim can be explained simply"),
+        (("coach", "friendly", "people", "team", "manager", "julie"), "human readiness, team process, stakeholder alignment, and behavior change"),
+        (("devil", "skeptic", "critic", "adversarial"), "failure modes, weak assumptions, contrary evidence, and what would make the plan wrong"),
+        (("beast", "creator", "content", "audience", "viral"), "audience pull, attention, packaging, retention, and measurable response"),
+    ]
+    for keys, angle in named_angles:
+        if any(k in hay for k in keys):
+            return angle
+
+    roster_ids = [str(p.get("id") or "").strip() for p in counsel_roster]
+    try:
+        idx = roster_ids.index(persona_id.strip())
+    except ValueError:
+        idx = 0
+    fallback_angles = [
+        "goals, success criteria, and the decision that must be made",
+        "constraints, dependencies, resources, and timing",
+        "users, stakeholders, workflow impact, and adoption friction",
+        "evidence gaps, measurable facts, baselines, and unknown assumptions",
+        "risks, tradeoffs, reversibility, and worst-case consequences",
+        "implementation sequence, ownership, milestones, and bottlenecks",
+        "strategic alternatives, opportunity cost, and what not to do",
+        "communication, incentives, governance, and decision rights",
+    ]
+    return fallback_angles[idx % len(fallback_angles)]
+
+
+def _fact_question_texts(all_threads: dict[str, list[dict[str, Any]]]) -> list[str]:
+    out: list[str] = []
+    for rows in all_threads.values():
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if str(r.get("role") or "").strip().lower() != "persona":
+                continue
+            text = str(r.get("content") or "").strip()
+            if text:
+                out.append(text)
+    return out
+
+
+def _counsel_fact_shared_questions(
+    all_threads: dict[str, list[dict[str, Any]]],
+    *,
+    persona_id: str,
+    counsel_roster: list[dict[str, Any]],
+) -> str:
+    lines: list[str] = []
+    name_by_id = {
+        str(p.get("id") or "").strip(): str(p.get("name") or "").strip()
+        for p in counsel_roster
+        if str(p.get("id") or "").strip()
+    }
+    for pid, rows in all_threads.items():
+        if not isinstance(rows, list):
+            continue
+        label = "You" if str(pid) == str(persona_id) else name_by_id.get(str(pid), str(pid))
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if str(r.get("role") or "").strip().lower() != "persona":
+                continue
+            text = str(r.get("content") or "").strip()
+            if text:
+                lines.append(f"- {label}: {text}")
+    return "\n".join(lines) or "(none yet)"
+
+
+def _fact_question_signature(text: str) -> set[str]:
+    stop = {
+        "the", "and", "or", "to", "of", "in", "for", "a", "an", "is", "are", "do", "does", "did", "what",
+        "which", "who", "when", "where", "why", "how", "can", "could", "would", "should", "you", "your",
+        "we", "our", "it", "this", "that", "these", "those", "with", "from", "about", "have", "has", "be",
+        "been", "as", "on", "by", "at", "if", "will", "need", "know", "clarify", "specific", "current",
+    }
+    return {w for w in re.findall(r"[\w']+", text.lower()) if len(w) > 2 and w not in stop}
+
+
+def _is_repeated_fact_question(candidate: str, existing_questions: list[str]) -> bool:
+    cand = _fact_question_signature(candidate)
+    if not cand:
+        return False
+    cand_norm = re.sub(r"\W+", " ", candidate.lower()).strip()
+    for existing in existing_questions:
+        ex_norm = re.sub(r"\W+", " ", existing.lower()).strip()
+        if cand_norm == ex_norm:
+            return True
+        ex = _fact_question_signature(existing)
+        if not ex:
+            continue
+        overlap = len(cand & ex) / max(1, min(len(cand), len(ex)))
+        if overlap >= 0.72 and len(cand & ex) >= 4:
+            return True
+    return False
 
 
 def _counsel_fact_thread(thread: list[dict[str, Any]]) -> str:

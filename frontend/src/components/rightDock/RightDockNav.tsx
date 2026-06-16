@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Moon, SunMedium } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../../i18n/useI18n";
 import useUiStore from "../../store/useUiStore";
@@ -16,9 +16,14 @@ export default function RightDockNav() {
   );
 
   return (
-      <nav className="border-b border-[var(--mm-border-subtle)] px-4 pt-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-medium text-[var(--mm-text-title)]">{t("nav_appearance")}</div>
+      <nav className="border-b border-[var(--mm-border-subtle)] px-4 pb-3 pt-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Workspace panels
+          </div>
+          <div className="mt-0.5 text-xs font-medium text-[var(--mm-text-title)]">{t("nav_appearance")}</div>
+        </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div
             className="ios-segment shrink-0"
@@ -56,7 +61,7 @@ export default function RightDockNav() {
             <span className="ios-toggle-track" data-on={theme === "dark"} />
             <span className="ios-toggle-knob" data-on={theme === "dark"} />
             <span className="ios-toggle-icon" aria-hidden>
-              {theme === "dark" ? "🌙" : "☀️"}
+              {theme === "dark" ? <Moon className="h-3 w-3" /> : <SunMedium className="h-3 w-3" />}
             </span>
           </button>
           <button
@@ -69,6 +74,9 @@ export default function RightDockNav() {
             {t("nav_hide")}
           </button>
         </div>
+      </div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+        Task
       </div>
       <div className="ios-segment w-full">
             <button

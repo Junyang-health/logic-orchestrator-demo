@@ -16,6 +16,7 @@ from app.routers.projects import router as projects_router
 from app.routers.assistant import router as assistant_router
 from app.routers.word_export import router as word_export_router
 from app.routers.session import router as session_router
+from app.routers.slide_build import router as slide_build_router
 
 app = FastAPI(title="backend")
 
@@ -23,8 +24,10 @@ app = FastAPI(title="backend")
 @app.on_event("startup")
 def _session_autofill_on_startup() -> None:
     from app.services.session_wizard import maybe_autocomplete_wizard_from_dotenv
+    from app.services.slide_job_embedded import start_embedded_slide_worker
 
     maybe_autocomplete_wizard_from_dotenv()
+    start_embedded_slide_worker()
 
 allowed_origins = [
     "http://localhost:5173",
@@ -57,4 +60,5 @@ app.include_router(models_router)
 app.include_router(projects_router)
 app.include_router(assistant_router)
 app.include_router(word_export_router)
+app.include_router(slide_build_router)
 

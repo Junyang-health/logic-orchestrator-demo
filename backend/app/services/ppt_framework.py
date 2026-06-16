@@ -6,6 +6,7 @@ from typing import Any
 
 from app.services.tavily_search import format_results_for_prompt, tavily_search
 from app.services.llm_client import LlmClient
+from app.services.ppt_master_bridge import build_ppt_master_framework_guidance
 
 # Shown in user prompt so the model aligns titles, phrasing, and the "visual" field.
 DECK_STYLE_SPECS: dict[str, str] = {
@@ -47,6 +48,33 @@ def _normalize_deck_style(value: str | None) -> str:
     return "consulting_mbb"
 
 
+# Slide information density + default exhibit grammar (consulting-style decks).
+# Referenced by skeleton / enrich / chat / reconcile so generation stays aligned with export prompts.
+PPT_SLIDE_LAYOUT_AND_EXHIBIT_RULES = """
+## Slide density (mandatory taxonomy)
+Classify every slide as **Standard** or **Dense**. The **first line** of the `visual` field must be exactly one of:
+- `Density: Standard`
+- `Density: Dense`
+
+**Standard** — baseline load. The `visual` plan must cover these zones (title/subtitle already map to JSON `title` / `subtitle`):
+1. **Title zone** — action / conclusion title (the so-what).
+2. **Subtitle** — one supporting line under the title.
+3. **Main exhibit** — the single dominant visual that proves the message (hero chart, diagram, or table).
+4. **Key highlight** — bottom band or callout: the one-line takeaway the audience must remember.
+5. **Footer** — data / source line (survey name, period, database, document, or analyst note).
+
+**Dense** — for **key supporting evidence** (e.g. market statistics, head-to-head comparisons, valuation / bridge logic). Same title, subtitle, key highlight, and footer as Standard, but instead of one main exhibit, specify **up to four exhibits** in **logical sequence** (label **Exhibit 1** … **Exhibit 4** in the `visual` text). Each exhibit should be compact and scannable.
+
+## Exhibit type reference (pick the graphic to match the analysis)
+- **Market / trend data** → **Trend graph** (time series). Differentiate key periods or segments with color; include axis labels, units, and the critical numeric labels.
+- **Competitive comparison** → **Matrix table** (players or options × criteria; contrasts must be explicit).
+- **Value creation / variance** → **Value bridge** (waterfall / bridge from start value to end value).
+- **Risk / exposure** → **Heatmap** (two-dimensional intensity grid; legend + axis labels).
+
+Unless the user's brief explicitly overrides, apply these density and exhibit conventions together with **DECK_STYLE**.
+""".strip()
+
+
 def _format_deck_style_block(deck_style: str) -> str:
     key = _normalize_deck_style(deck_style)
     label = {
@@ -76,7 +104,7 @@ Schema:
       "title": "string",
       "subtitle": "string",
       "main": "string: narrative and messages — the ideas, story, and what the audience should take away (not the graphic spec; keep that in visual)",
-      "visual": "string: REQUIRED for every slide — (1) the visual ANCHOR (hero image, big number, key diagram, or focal zone), and (2) how CONTENT is PRESENTED for emphasis and contrast. Prioritize info-dense yet scannable forms: infographics, charts (type + what is compared), and tables (rows/columns and what they contrast). State layout intent (e.g. split 60/40 chart vs. narrative, callout panel, two-column before/after) so a designer or image model can build it. Avoid text-only default — prefer a graphic, chart, or table to carry the proof or structure."
+      "visual": "string: REQUIRED — First line MUST be `Density: Standard` or `Density: Dense` (see layout rules in the system prompt). Then: (1) the visual ANCHOR (hero image, big number, key diagram, or focal zone), and (2) how CONTENT is PRESENTED for emphasis and contrast. Prioritize info-dense yet scannable forms: infographics, charts (type + what is compared), and tables (rows/columns and what they contrast). Standard = one main exhibit + key highlight zone + source footer; Dense = up to four sequenced exhibits (Exhibit 1–4) + same highlight + footer. State layout intent (e.g. split 60/40 chart vs. narrative, callout panel, two-column before/after) so a designer or image model can build it. Avoid text-only default — prefer a graphic, chart, or table to carry the proof or structure."
     }
   ]
 }
@@ -87,7 +115,8 @@ Rules:
 - Ground claims in the mindmap outline and source material. If data is missing, state assumptions briefly in the "main" or "visual" text for that slide.
 - Each "main" should be 2–5 short paragraphs or bullet-style lines (as plain text), focused on content and message.
 - "subtitle" is the supporting one-liner under the title (not the same as "main").
-- "visual" must be substantive on every slide: always name the primary graphic vehicle and how it creates highlight vs. supporting text."""
+- "visual" must be substantive on every slide: always name the primary graphic vehicle and how it creates highlight vs. supporting text.
+""" + "\n\n" + PPT_SLIDE_LAYOUT_AND_EXHIBIT_RULES
 
 
 PPT_FRAMEWORK_CHAT_SYSTEM = """You help refine a PowerPoint *framework* (outline per slide, not final pixel design). Return JSON only. No markdown fences.
@@ -116,7 +145,9 @@ Rules:
 - If the user reorders slides, return them in the new order with ids preserved from the input where possible.
 - Ground changes in the mindmap and source context when relevant.
 - When the user asks for "more visual" or "more data", strengthen "visual" with chart/table/infographic specifics.
-- **OUTPUT LANGUAGE** in the user message: `reply` and all slide text must follow it."""
+- Keep PPT-master visual planning discipline: one clear anchor structure per slide, with explicit exhibit grammar and page-filling composition.
+- **OUTPUT LANGUAGE** in the user message: `reply` and all slide text must follow it.
+""" + "\n\n" + PPT_SLIDE_LAYOUT_AND_EXHIBIT_RULES
 
 
 def _format_skills_block(
@@ -384,7 +415,10 @@ Rules:
 - Leave **main** and **visual** as empty strings "" — they are filled in a later step. Do not write long body text here.
 - Ground the arc in the mindmap and source material. Coherent narrative order.
 - Follow DECK_STYLE in the user message.
-- **OUTPUT LANGUAGE** in the user message is mandatory: all `title`, `subtitle`, and `beat` must follow it."""
+- **Density planning:** Assume most slides will be **Standard** (one main exhibit when content is filled later). When the storyline needs stacked proof—market/trend data, competitor comparison, valuation walk, or layered risk—signal in **beat** that the slide should be **Dense** (e.g. prefix with `Dense:` or say the slide carries multi-panel evidence) so the enrich step can plan up to four exhibits.
+- **OUTPUT LANGUAGE** in the user message is mandatory: all `title`, `subtitle`, and `beat` must follow it.
+
+""" + PPT_SLIDE_LAYOUT_AND_EXHIBIT_RULES
 
 
 PPT_ENRICH_SYSTEM = """You fill in `main` and `visual` for specific slides of a deck framework. Return JSON only. No markdown fences.
@@ -398,8 +432,11 @@ Rules:
 - Return **only** the slides requested by index. Each object must include **id** matching the skeleton, full **main** (message, proof, takeaway) and full **visual** (anchor + chart/table/infographic plan as in the main PPT framework spec).
 - Preserve **title**, **subtitle**, **beat** unless a small alignment fix is needed vs neighbors.
 - Stay consistent with DECK_STYLE and with the full outline you are given.
+- Plan `visual` with PPT-master discipline: pick one canonical chart / diagram family that best fits the slide argument, and make the anchor large enough to carry the page.
 - Ground in mindmap/source when relevant.
-- **OUTPUT LANGUAGE** in the user message: `main` and `visual` must be in the same language as the skeleton and brief."""
+- **OUTPUT LANGUAGE** in the user message: `main` and `visual` must be in the same language as the skeleton and brief.
+
+""" + PPT_SLIDE_LAYOUT_AND_EXHIBIT_RULES
 
 
 PPT_RECONCILE_SYSTEM = """You polish a completed deck *framework* for narrative consistency. Return JSON only. No markdown fences.
@@ -413,7 +450,11 @@ Rules:
 - Return the **full** `slides` array in the same order and count as input. Fix: duplicated ideas, weak transitions, title/body mismatches, redundant slides, or voice drift.
 - Do not remove slides unless clearly duplicate; prefer tightening text.
 - Keep DECK_STYLE alignment.
-- **OUTPUT LANGUAGE** in the user message: the `reply` and all slide text must stay in that language (do not “translate away” the user’s language)."""
+- Preserve **Standard / Dense** structure: keep `Density: Standard` or `Density: Dense` as the first line of `visual` unless you are intentionally converting slide type; keep exhibit grammar (single main exhibit vs Exhibit 1–4) consistent with that choice.
+- Keep PPT-master visual discipline: every slide should still imply a clear, full-page anchor structure rather than a generic text box layout.
+- **OUTPUT LANGUAGE** in the user message: the `reply` and all slide text must stay in that language (do not “translate away” the user’s language).
+
+""" + PPT_SLIDE_LAYOUT_AND_EXHIBIT_RULES
 
 
 def _ppt_source_block(source_snippets: list[dict[str, str]]) -> str:
@@ -546,6 +587,7 @@ def run_ppt_enrich_batch(
     dstyle = _normalize_deck_style(deck_style)
     idx_str = ", ".join(str(i) for i in indices)
     targets = [slides[i] for i in indices]
+    framework_for_guidance = {"deck_style": dstyle}
     user = "\n\n".join(
         [
             _ppt_common_brief_block(
@@ -563,6 +605,8 @@ def run_ppt_enrich_batch(
             "",
             "## Slides to fully detail now (0-based indices: " + idx_str + ")",
             _slides_block(targets),
+            "",
+            build_ppt_master_framework_guidance(framework_for_guidance, targets),
             "",
             "## Mindmap (reference)",
             mm,
@@ -610,6 +654,7 @@ def run_ppt_reconcile(
     mm = _trim(mindmap_markdown, 40000)
     source_block = _trim(_ppt_source_block(source_snippets), 50000)
     dstyle = _normalize_deck_style(deck_style)
+    framework_for_guidance = {"deck_style": dstyle}
     user = "\n\n".join(
         [
             _ppt_common_brief_block(
@@ -624,6 +669,8 @@ def run_ppt_reconcile(
             "",
             "## Full deck to reconcile (fix storyline and consistency only)",
             _slides_block(list(slides)),
+            "",
+            build_ppt_master_framework_guidance(framework_for_guidance, list(slides)),
             "",
             "## Mindmap (reference, light)",
             mm[:12000] + ("\n" if len(mm) > 12000 else ""),
@@ -696,10 +743,13 @@ def run_ppt_framework_chat(
         focus = f"\n**User focus (1-based):** edit slide {target_slide_index + 1} first if relevant; still return the full `slides` list.\n"
 
     dstyle = _normalize_deck_style(deck_style)
+    framework_for_guidance = {"deck_style": dstyle}
     user = "\n\n".join(
         [
             "## Current deck framework (edit this)",
             _slides_block(slides),
+            "",
+            build_ppt_master_framework_guidance(framework_for_guidance, list(slides)),
             "",
             "## Original brief",
             _output_language_block(intent, audience, style),

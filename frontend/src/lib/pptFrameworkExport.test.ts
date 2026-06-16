@@ -34,6 +34,15 @@ describe("frameworkToMarkdown", () => {
     expect(md).toContain("# My deck");
     expect(md).toContain("## Style");
     expect(md).toContain("**MBB**");
+    const mdWithLayout = frameworkToMarkdown(sample, "My deck", {
+      storyBeat: "Beat",
+      sectionContent: "Content",
+      sectionVisual: "Visual",
+      visualEmpty: "_(empty)_",
+      layoutRulesBlock: "## Custom layout rules\n\nTest."
+    });
+    expect(mdWithLayout).toContain("## Custom layout rules");
+    expect(mdWithLayout).toContain("Test.");
     expect(md).toContain("## Slide 1: Intro");
     expect(md).toContain("#### Beat");
     expect(md).toContain("Set context");
@@ -58,6 +67,9 @@ describe("frameworkToPptPrompt", () => {
     expect(p).toContain("Teach");
     expect(p).toContain("Execs");
     expect(p).toContain("Dark");
+    const p2 = frameworkToPptPrompt(sample, { layoutRules: "## Rules\n\nBe dense." });
+    expect(p2).toContain("## Rules");
+    expect(p2).toContain("Be dense.");
     expect(p).toContain("### Slide 1");
     expect(p).toContain("**Title:** Intro");
     expect(p).toContain("**Story beat:** Set context");

@@ -22,9 +22,10 @@ import {
   type CounselPersona
 } from "../../lib/counselApi";
 import { useI18n } from "../../i18n/useI18n";
-import { presetRoundtableInstruction } from "./assistantTypes";
+import { COUNSEL_ROSTER_KEY, loadCounselRoster, presetRoundtableInstruction } from "./assistantTypes";
+import { getDefaultNuwaCounselRoster, getNuwaPersonaInstruction } from "./nuwaPersonaCatalog";
 import { counselErrorToMessage, counselRunAsync } from "./counselRunAsync";
-import type { Phase } from "./counselSessionState";
+import type { FactThread, Phase } from "./counselSessionState";
 import { useCounselSession } from "./useCounselSession";
 import { COUNSEL_DEBATE_AUTO_PAUSE_MS, COUNSEL_HOST_LABEL } from "./counselFlowConstants";
 import { buildFactDigest, buildDebateDigest, summarizeCounselVotes } from "./counselFlowDigests";
@@ -128,6 +129,45 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
   const fetchFactQuestionRef = useRef<(p: CounselPersona) => Promise<void>>(async () => {});
   const problemReplyRef = useRef<HTMLTextAreaElement>(null);
   const problemSummaryRef = useRef<HTMLTextAreaElement>(null);
+  const counselRosterLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (counselRosterLoadedRef.current) return;
+    counselRosterLoadedRef.current = true;
+    const stored = typeof localStorage === "undefined" ? [] : loadCounselRoster();
+    const fallback = getDefaultNuwaCounselRoster().map((p) => ({
+      name: p.name,
+      instruction: p.instruction
+    }));
+    const initialRoster = stored.length > 0 ? stored : fallback;
+    if (initialRoster.length === 0) return;
+    setPersonas((prev) => {
+      if (prev.length > 0) return prev;
+      return initialRoster.map((p, idx) => ({
+        id: `cns_restore_${idx}_${Math.random().toString(16).slice(2, 8)}`,
+        name: p.name,
+        instruction: p.instruction
+      }));
+    });
+  }, [setPersonas]);
+
+  useEffect(() => {
+    if (!counselRosterLoadedRef.current) return;
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(
+        COUNSEL_ROSTER_KEY,
+        JSON.stringify(
+          personas.map((p) => ({
+            name: p.name.trim().slice(0, 120),
+            instruction: p.instruction.trim().slice(0, 8000)
+          }))
+        )
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [personas]);
 
   const graphPayload = useMemo(
     () => ({
@@ -178,6 +218,18 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
     [personas]
   );
 
+  const addNuwaPersona = useCallback(
+    (id: string, name: string) => {
+      const n = name.trim();
+      const ins = getNuwaPersonaInstruction(id).slice(0, 8000);
+      if (!n || !ins || personas.length >= 8) return;
+      if (personas.some((p) => p.name.toLowerCase() === n.toLowerCase())) return;
+      const pid = `cns_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+      setPersonas((prev) => [...prev, { id: pid, name: n, instruction: ins }]);
+    },
+    [personas]
+  );
+
   const addCustomPersona = useCallback(() => {
     const name = newPersonaName.trim().slice(0, 120);
     const instruction = newPersonaInstruction.trim().slice(0, 8000);
@@ -205,6 +257,21 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
     [personas, removePersona, addPresetPersona]
   );
 
+  const toggleNuwaPersona = useCallback(
+    (id: string, name: string) => {
+      const n = name.trim();
+      const ins = getNuwaPersonaInstruction(id).slice(0, 8000);
+      if (!n || !ins) return;
+      const existing = personas.find((p) => p.name.toLowerCase() === n.toLowerCase() && p.instruction === ins);
+      if (existing) {
+        removePersona(existing.id);
+        return;
+      }
+      addNuwaPersona(id, n);
+    },
+    [personas, removePersona, addNuwaPersona]
+  );
+
   const toggleLibPersona = useCallback(
     (name: string, instruction: string) => {
       const n = name.trim();
@@ -225,6 +292,14 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
       personas.some(
         (p) => p.name === name && p.instruction === presetRoundtableInstruction(name).slice(0, 8000)
       ),
+    [personas]
+  );
+
+  const nuwaOnPanel = useCallback(
+    (id: string, name: string) => {
+      const ins = getNuwaPersonaInstruction(id).slice(0, 8000);
+      return personas.some((p) => p.name === name && p.instruction === ins);
+    },
     [personas]
   );
 
@@ -332,6 +407,12 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
       setFactLoading((prev) => ({ ...prev, [persona.id]: true }));
       setError("");
       const th = factThreads[persona.id] || { messages: [] };
+      const allThreads = Object.fromEntries(
+        Object.entries(factThreads).map(([id, factThread]) => [
+          id,
+          factThread.messages.map((m) => ({ role: m.role, content: m.content }))
+        ])
+      );
       try {
         const out = await counselFactQuestion(backendBase, {
           ...graphPayload,
@@ -339,9 +420,11 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
           persona_id: persona.id,
           persona_name: persona.name,
           persona_instruction: persona.instruction,
+          counsel_roster: personas.map((p) => ({ id: p.id, name: p.name, instruction: p.instruction })),
           problem_summary: problemSummary,
           questions_asked_so_far: qn,
-          thread: th.messages.map((m) => ({ role: m.role, content: m.content }))
+          thread: th.messages.map((m) => ({ role: m.role, content: m.content })),
+          all_threads: allThreads
         });
         const qtext = out.question?.trim();
         if (qtext) {
@@ -368,7 +451,7 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
         });
       }
     },
-    [backendBase, graphPayload, sourcePayload, problemSummary, factThreads, questionsAsked, factSkippedIds, t]
+    [backendBase, graphPayload, sourcePayload, personas, problemSummary, factThreads, questionsAsked, factSkippedIds, t]
   );
 
   fetchFactQuestionRef.current = fetchFactQuestion;
@@ -386,6 +469,7 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
       if (!needs) continue;
       if (factInFlightRef.current.has(p.id)) continue;
       void fn(p);
+      return;
     }
   }, [phase, personas, factThreads, questionsAsked, factSkippedIds]);
 
@@ -398,6 +482,11 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
         messages: [...(prev[personaId]?.messages || []), { role: "user", content: line }]
       }
     }));
+  }, []);
+
+  const skipFactPersona = useCallback((personaId: string) => {
+    setFactSkippedIds((prev) => ({ ...prev, [personaId]: true }));
+    setFactFocusPersonaId((cur) => (cur === personaId ? null : cur));
   }, []);
 
   const onFactPersonaCardBlur = useCallback((personaId: string, e: FocusEvent<HTMLDivElement>) => {
@@ -906,10 +995,13 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
     addPersonaFromLib,
     removePersona,
     addPresetPersona,
+    addNuwaPersona,
     addCustomPersona,
     togglePresetPersona,
+    toggleNuwaPersona,
     toggleLibPersona,
     presetOnPanel,
+    nuwaOnPanel,
     libRowOnPanel,
     presetPreview,
     generatePublicFigureInstruction,
@@ -917,6 +1009,7 @@ export function useCounselFlowRuntime(props: CounselFlowProps) {
     submitProblemUser,
     acceptProblem,
     submitFactAnswer,
+    skipFactPersona,
     onFactPersonaCardBlur,
     onExtendDebateMessageLimit,
     factBusyAny,

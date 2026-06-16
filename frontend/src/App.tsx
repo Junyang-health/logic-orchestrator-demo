@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ProjectLandingOverlay from "./components/ProjectLandingOverlay";
 import SessionSetupGate from "./components/SessionSetupGate";
+import CanvasWorkspaceToggle from "./components/CanvasWorkspaceToggle";
+import SlideDeckCenterWorkspace from "./components/SlideDeckCenterWorkspace";
 import X6Canvas from "./components/X6Canvas";
 import AssistantOverlay from "./components/AssistantOverlay";
 import AssistantAndCanvasRow from "./components/rightDock/AssistantAndCanvasRow";
@@ -29,6 +31,7 @@ export default function App() {
   );
 
   const rightDockOpen = useUiStore((s) => s.rightDockOpen);
+  const centerWorkspace = useUiStore((s) => s.centerWorkspace);
   const assistantOverlayOpen = useUiStore((s) => s.assistantOverlayOpen);
   const reparentingNodeId = useUiStore((s) => s.reparentingNodeId);
   const reparentingRelation = useUiStore((s) => s.reparentingRelation);
@@ -85,7 +88,34 @@ export default function App() {
       <div className="flex h-full w-full">
         <section className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r border-[var(--mm-border-subtle)] bg-[var(--mm-bg-app)]">
           <AssistantAndCanvasRow>
-            <X6Canvas {...canvasProps} onGraphReady={setGraph} />
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              <CanvasWorkspaceToggle />
+              {/*
+                Do not use `hidden` (display:none) on the canvas branch: it collapses the X6
+                container to 0×0, so the graph can initialize at 1×1 and never refit. Keep both
+                layers in the layout with `absolute inset-0` and toggle visibility instead.
+              */}
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <div
+                  className={[
+                    "absolute inset-0 z-0 flex min-h-0 min-w-0 flex-col",
+                    centerWorkspace !== "canvas" ? "invisible pointer-events-none" : ""
+                  ].join(" ")}
+                  aria-hidden={centerWorkspace !== "canvas"}
+                >
+                  <X6Canvas {...canvasProps} onGraphReady={setGraph} />
+                </div>
+                <div
+                  className={[
+                    "absolute inset-0 z-10 flex min-h-0 min-w-0 flex-col",
+                    centerWorkspace !== "slide_deck" ? "invisible pointer-events-none" : ""
+                  ].join(" ")}
+                  aria-hidden={centerWorkspace !== "slide_deck"}
+                >
+                  <SlideDeckCenterWorkspace backendBase={backendBase} />
+                </div>
+              </div>
+            </div>
             {assistantOverlayOpen ? <AssistantOverlay /> : null}
           </AssistantAndCanvasRow>
         </section>

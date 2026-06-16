@@ -5,6 +5,7 @@ import { buildReviewSlice } from "./slices/reviewSlice";
 import { buildSkillsSlice } from "./slices/skillsSlice";
 import { buildSourceSlice } from "./slices/sourceSlice";
 import { buildUiChromeSlice } from "./slices/uiChromeSlice";
+import { buildPptDeckSlice } from "./slices/pptDeckSlice";
 import type { UiStore } from "./uiStoreTypes";
 
 export type {
@@ -23,7 +24,8 @@ const useUiStore = create<UiStore>((set, get) => ({
   ...buildReviewSlice(set, get),
   ...buildSourceSlice(set, get),
   ...buildUiChromeSlice(set, get),
-  ...buildGraphSlice(set, get)
+  ...buildGraphSlice(set, get),
+  ...buildPptDeckSlice(set, get)
 }));
 
 export default useUiStore;

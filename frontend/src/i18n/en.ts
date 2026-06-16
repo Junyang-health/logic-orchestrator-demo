@@ -317,8 +317,135 @@ export const en = {
   export_word_subtitle:
     "Select branches above, then set intent, audience, and any source notes. The model builds a consulting-style chapter framework (Deer-Flow consulting-analysis reference), lets you review and refine it, checks data sufficiency, then you can download chapter prompts and visual plans as Markdown.",
   export_intro: `Branches are listed by depth. Selecting a node selects its whole subtree; deselecting clears that subtree. Parents can show a dash when only some descendants are selected. Export merges all selected subtrees.`,
+
+  workspace_canvas: "Mindmap",
+  workspace_slide_deck: "Slide deck",
+  workspace_toggle_aria: "Switch main workspace",
+
+  slide_deck_empty:
+    "No slides in the outline yet. Generate a deck in Export → PPT framework, or return to the mindmap.",
+  slide_deck_back_canvas: "Back to mindmap",
+  slide_deck_counter: "Slide {current} of {total}",
+  slide_deck_prev: "Previous slide",
+  slide_deck_next: "Next slide",
+  slide_deck_frame_title: "Slide preview",
+  slide_deck_no_body: "(No body text)",
+  slide_deck_no_html_hint:
+    "Slides are filled automatically after the questionnaire finishes, then refresh whenever you chat with AI or save HTML edits.",
+  slide_deck_wizard_title: "Slide build questionnaire",
+  slide_deck_wizard_intro:
+    "Answer briefly—responses are stitched into each AI slide-generation job alongside your outline.",
+  slide_deck_wizard_skills_hint:
+    "Lens fields appear here only when the Web or Finance lenses are switched on in Export → Skills.",
+  slide_deck_design_heading: "Style & layout",
+  slide_deck_design_density: "Density",
+  slide_deck_design_surface: "Surface fill",
+  slide_deck_design_typography: "Typography",
+  slide_deck_design_imagery: "Imagery",
+  slide_deck_design_rhythm: "Slide rhythm",
+  slide_deck_density_compact: "Compact",
+  slide_deck_density_balanced: "Balanced",
+  slide_deck_density_spacious: "Spacious",
+  slide_deck_surface_light: "Light",
+  slide_deck_surface_dark: "Dark",
+  slide_deck_surface_glass: "Glass",
+  slide_deck_surface_mono: "Monochrome",
+  slide_deck_type_system: "Sans / system",
+  slide_deck_type_serif: "Serif",
+  slide_deck_type_condensed: "Condensed",
+  slide_deck_imagery_diagram: "Diagrams",
+  slide_deck_imagery_illus: "Illustration",
+  slide_deck_imagery_photo: "Photographic",
+  slide_deck_rhythm_minimal: "Minimal chrome",
+  slide_deck_rhythm_standard: "Consulting cadence",
+  slide_deck_rhythm_expressive: "Expressive",
+  slide_deck_ref_upload_label: "Reference style uploads",
+  slide_deck_ref_upload_help:
+    "PNG/JPEG/WebP or PDF thumbnails that show palette, grid, typography, or layout you want echoed.",
+  slide_deck_ref_on_server: "On server",
+  slide_deck_ref_pending: "Will upload",
+  slide_deck_q_label_design: "[Style & design]",
+  slide_deck_q_label_design_json: "[Design JSON]",
+  slide_deck_q_label_refs: "[Reference files]",
+  slide_deck_wizard_no_session: "No slide build session — reopen from Export → PPT.",
+  slide_deck_wizard_submit_err: "Could not save questionnaire — try again.",
+  slide_deck_wizard_submitting: "Saving…",
+  slide_deck_q_global: "Deck-wide priorities & tone",
+  slide_deck_q_global_ph: "Audience cadence, taboo phrases, citations, typography…",
+  slide_deck_q_web: "Web lens — grounding & sources",
+  slide_deck_q_web_ph: "Queries, trustworthy domains, when to disclaim uncertainty…",
+  slide_deck_q_finance: "Finance lens — numerics framing",
+  slide_deck_q_finance_ph: "KPIs, units, how to phrase ranges or scenarios…",
+  slide_deck_q_extra_skills: "Custom skill text (paste from Export)",
+  slide_deck_q_extra_skills_ph: "Bullets imported skills should enforce verbatim or semantically.",
+  slide_deck_q_label_global: "[Deck-wide]",
+  slide_deck_q_label_web: "[Web lens]",
+  slide_deck_q_label_finance: "[Finance lens]",
+  slide_deck_q_label_extra: "[Custom skills]",
+  slide_deck_style_prefix: "Questionnaire context — outline has {slides} slides:",
+  slide_deck_style_fallback_default: "Honor the consulting-style HTML contract and outline facts faithfully.",
+  slide_deck_wizard_submit: "Continue — queue slides sequentially",
+  slide_deck_generating_banner: "Sequentially generating slide HTML…",
+  slide_deck_generating_progress: "Rendering slide HTML {cur} / {total} ({pct}% complete)",
+  slide_deck_rail_assist: "AI assist",
+  slide_deck_rail_edit: "Edit HTML",
+  slide_deck_chat_intro:
+    "Ask for copy edits, restructuring, bolder visuals, or tone shifts. Responses rewrite the centered preview.",
+  slide_deck_chat_ph: "Instruction for this slide (⌘/Ctrl + Enter sends)",
+  slide_deck_chat_send: "Send",
+  slide_deck_chat_sending: "Sending…",
+  slide_deck_chat_err: "That request failed — try again or edit HTML directly.",
+  slide_deck_chat_generic_reply: "Applied your instruction to this slide preview.",
+  slide_deck_edit_load: "Load from server",
+  slide_deck_edit_save: "Save to preview",
+  slide_deck_link_exports: "Open export panel",
+  slide_deck_rail_framework: "Outline",
+  slide_deck_framework_heading: "Slide outline & visual plan",
+  slide_deck_framework_intro:
+    "Edits persist to the server outline. Save updates structure only; Regenerate reruns AI HTML for this slide.",
+  slide_deck_fw_title: "Slide title",
+  slide_deck_fw_subtitle: "Subtitle line",
+  slide_deck_fw_content: "Main narrative (body bullets)",
+  slide_deck_fw_visual: "Visual plan",
+  slide_deck_fw_visual_hint:
+    "Describe layouts, charts, contrast tables, and where illustration belongs. For AI images say so—the generator adds placeholders with data-image-prompt hints.",
+  slide_deck_fw_save: "Save outline",
+  slide_deck_fw_saving: "Saving…",
+  slide_deck_fw_regen: "Regenerate slide",
+  slide_deck_fw_regenerating: "Saving & queuing…",
+  slide_deck_fw_err: "Could not update the outline.",
+  slide_deck_strip_delete: "Remove slide",
+  slide_deck_strip_delete_confirm:
+    "Remove this slide from the deck? Its preview file may remain on the server until replaced.",
+  slide_deck_strip_drag_handle: "Drag to reorder slides",
+  slide_deck_strip_drag_hint: "Drop on another thumbnail to change order",
+  slide_deck_strip_save_err: "Could not save slide order — try again.",
+
   ppt_intro:
     "Pick a **deck style** preset (consulting, government, academic, or creative) — it steers the framework, visuals, and exports. Each slide has content & a **visual** plan (infographics, charts, tables for contrast). Refine in the editor or via chat, then export. **Language:** write your intent and audience (and optional look & feel) mainly in the language you want the deck in — the model follows that, not a fixed locale.",
+  ppt_center_deck_hint:
+    "Use **Slide deck** (top-left) for a full-screen 16:9 stage; built slide HTML appears there when you have an active build session.",
+  ppt_workspace_framework: "Outline & refine",
+  ppt_workspace_builder: "Slide build (HTML + export)",
+  ppt_builder_title: "Slide build queue",
+  ppt_builder_workflow_intro:
+    "When your outline is ready here, tap the button below. The Slide deck opens with a questionnaire, then runs every slide sequentially. Polish with AI Assist or Edit HTML.",
+  ppt_builder_cta_slide_deck: "Start slide deck build",
+  ppt_builder_intro:
+    "Creates a backend session from this outline. Jobs (HTML per slide, PPTX/PDF export) are processed automatically while the API is running. Optional: run a separate `python -m worker` in `backend/` if you set `UNBOX_EMBEDDED_SLIDE_WORKER=0`.",
+  ppt_builder_worker_hint:
+    "If a job stays pending more than ~2s after a restart, ensure the API was restarted after updating the backend. Disable the in-process worker only with `UNBOX_EMBEDDED_SLIDE_WORKER=0` (then keep `python -m worker` running).",
+  ppt_builder_start: "Start session from outline",
+  ppt_builder_starting: "Starting…",
+  ppt_builder_session: "Session",
+  ppt_builder_export_pptx: "Queue PPTX export",
+  ppt_builder_export_pdf: "Queue PDF export",
+  ppt_builder_download_pptx: "Download deck.pptx",
+  ppt_builder_download_pdf: "Download deck.pdf",
+  ppt_builder_generate_slide: "Generate HTML",
+  ppt_builder_preview: "Preview",
+  ppt_builder_ready_in_deck: "Shown in Slide deck",
+  ppt_builder_err_slides: "Add or generate slides in the outline first.",
   ppt_brief: "Brief (for the deck)",
   ppt_deck_style_label: "Deck style (preset)",
   ppt_deck_style_help:
@@ -374,6 +501,20 @@ export const en = {
   ppt_visual_empty_md: "_(TBD — prefer an infographic, chart, or table for highlight and contrast.)_",
   ppt_prompt_visual_fb:
     "Name the primary graphic, chart, or table; how layout splits; what contrasts with what. Avoid text-only slides if data allows.",
+  ppt_layout_rules_block: `## Slide density & exhibits (generation rules)
+
+### Taxonomy
+Every slide is **Standard** or **Dense**. The **first line** of each slide's visual plan must be exactly \`Density: Standard\` or \`Density: Dense\`.
+
+**Standard** — baseline. Plan these zones: (1) **Title** — action or conclusion title. (2) **Subtitle** — one supporting line under the title. (3) **Main exhibit** — one dominant chart, diagram, or table for the key message. (4) **Key highlight** — bottom band or callout with the single most important takeaway. (5) **Footer** — data / source line (survey, period, database, or document).
+
+**Dense** — for stacked supporting evidence (e.g. market statistics, head-to-head comparison, valuation logic). Same title, subtitle, key highlight, and footer as Standard; instead of one main exhibit, plan **up to four** exhibits in logical sequence (label **Exhibit 1**–**Exhibit 4** in the visual plan). Each panel should stay compact and scannable.
+
+### Exhibit types (reference)
+- **Market / trend data** → **Trend graph** — highlight key segments with color; include axis labels and critical data labels.
+- **Competitive comparison** → **Matrix table** — players or options × criteria with explicit contrast.
+- **Value illustration / variance** → **Value bridge** — waterfall or bridge from start value to end value.
+- **Risk / exposure** → **Heatmap** — two-dimensional intensity grid with legend and axis labels.`,
   ppt_add_slide: "Add slide",
   ppt_slide_untitled: "Untitled slide",
   ppt_export_prompt: "Download PPT prompt",

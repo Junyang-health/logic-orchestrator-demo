@@ -18,6 +18,7 @@ type Props = {
   onRemoveSlide: (index: number) => void;
   onAddSlide: () => void;
   onUpdateSlide: (index: number, field: keyof PptSlide, value: string) => void;
+  showExportActions?: boolean;
 };
 
 export default function PptFrameworkDeckSection({
@@ -29,7 +30,8 @@ export default function PptFrameworkDeckSection({
   onMoveSlide,
   onRemoveSlide,
   onAddSlide,
-  onUpdateSlide
+  onUpdateSlide,
+  showExportActions = true
 }: Props) {
   const { t } = useI18n();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -47,37 +49,54 @@ export default function PptFrameworkDeckSection({
 
   return (
     <div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{t("ppt_deck")}</div>
-        <div className="flex flex-wrap items-center gap-1">
-          <button type="button" className="ios-button py-0.5 text-[10px]" onClick={onExportPrompt}>
-            {t("ppt_export_prompt")}
-          </button>
-          <button
-            type="button"
-            className="ios-button flex items-center gap-0.5 py-0.5 text-[10px]"
-            onClick={() => void onCopyPptPrompt()}
-            title={t("ppt_copy_prompt_title")}
-          >
-            <ClipboardCopy className="h-3 w-3 shrink-0 opacity-80" />
-            {t("ppt_copy_prompt")}
-          </button>
-          {copyPromptFeedback === "ok" ? (
-            <span className="text-[9px] text-emerald-600 dark:text-emerald-400">{t("ppt_copied")}</span>
-          ) : copyPromptFeedback === "err" ? (
-            <span className="text-[9px] text-rose-600 dark:text-rose-400">{t("ppt_copy_failed")}</span>
-          ) : null}
-          <button type="button" className="ios-button py-0.5 text-[10px]" onClick={onExportMd}>
-            {t("ppt_export_md")}
-          </button>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Slides
+          </div>
+          <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{t("ppt_deck")}</div>
+          <p className="mt-1 max-w-[28rem] text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">
+            Review each slide as a story unit first, then expand only the cards you want to edit.
+          </p>
         </div>
+        {showExportActions ? (
+          <div className="flex flex-wrap items-center gap-1">
+            <button type="button" className="ios-button py-1 text-[11px]" onClick={onExportPrompt}>
+              {t("ppt_export_prompt")}
+            </button>
+            <button
+              type="button"
+              className="ios-button flex items-center gap-1 py-1 text-[11px]"
+              onClick={() => void onCopyPptPrompt()}
+              title={t("ppt_copy_prompt_title")}
+            >
+              <ClipboardCopy className="h-3 w-3 shrink-0 opacity-80" />
+              {t("ppt_copy_prompt")}
+            </button>
+            {copyPromptFeedback === "ok" ? (
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{t("ppt_copied")}</span>
+            ) : copyPromptFeedback === "err" ? (
+              <span className="text-[10px] text-rose-600 dark:text-rose-400">{t("ppt_copy_failed")}</span>
+            ) : null}
+            <button type="button" className="ios-button py-1 text-[11px]" onClick={onExportMd}>
+              {t("ppt_export_md")}
+            </button>
+          </div>
+        ) : null}
       </div>
-      <p className="mb-2 text-[10px] text-slate-500 dark:text-slate-400">{t("ppt_deck_edit_hint")}</p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          {slides.length} slide{slides.length === 1 ? "" : "s"}
+        </span>
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          Summary-first review
+        </span>
+      </div>
 
       {shouldVirtual ? (
         <div
           ref={parentRef}
-          className="max-h-[min(70vh,520px)] overflow-auto rounded-md border border-rose-100/40 bg-slate-50/30 p-1 dark:border-violet-900/20 dark:bg-slate-900/20"
+          className="max-h-[min(70vh,560px)] overflow-auto rounded-2xl border border-slate-200/80 bg-slate-50/55 p-2 dark:border-slate-700/70 dark:bg-slate-950/25"
         >
           <div
             className="relative w-full"
@@ -125,9 +144,9 @@ export default function PptFrameworkDeckSection({
         </div>
       )}
 
-      <button type="button" className="ios-button mt-2 w-full py-1.5 text-xs" onClick={onAddSlide}>
+      <button type="button" className="ios-button mt-3 w-full py-2 text-[12px] font-semibold" onClick={onAddSlide}>
         <Plus className="mr-1 inline h-3.5 w-3.5" />
-        {t("ppt_add_slide")}
+        Add slide after last
       </button>
     </div>
   );

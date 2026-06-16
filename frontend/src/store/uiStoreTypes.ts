@@ -1,4 +1,4 @@
-import type { MindmapEdge, MindmapJson, MindmapNode } from "../types/mindmap";
+import type { PptSlide } from "../lib/pptFrameworkExport";
 import type { ReviewComment } from "../types/review";
 import type { SourceFileEntry } from "../types/sourceMaterial";
 
@@ -56,6 +56,20 @@ export type UiStore = {
   collapseAllSubtreesToTopLevel: () => void;
   canvasCenterOnNodeRequest: { nodeId: string; token: number } | null;
   requestCanvasCenterOnNode: (nodeId: string) => void;
+
+  /** Main area: mindmap canvas vs PPT slide deck viewer */
+  centerWorkspace: "canvas" | "slide_deck";
+  setCenterWorkspace: (w: "canvas" | "slide_deck") => void;
+  /** Export sidebar sub-tab (mindmap / ppt / word) */
+  exportPanelTab: "mindmap" | "ppt" | "word";
+  setExportPanelTab: (tab: "mindmap" | "ppt" | "word") => void;
+  /** Shared PPT framework slides (Export → PPT panel + center deck viewer) */
+  pptSlides: PptSlide[];
+  setPptSlides: (v: PptSlide[] | ((prev: PptSlide[]) => PptSlide[])) => void;
+  slideBuildSessionId: string | null;
+  setSlideBuildSessionId: (id: string | null) => void;
+  deckViewerIndex: number;
+  setDeckViewerIndex: (i: number) => void;
 
   skills: Record<SkillKey, boolean>;
   toggleSkill: (key: SkillKey) => void;

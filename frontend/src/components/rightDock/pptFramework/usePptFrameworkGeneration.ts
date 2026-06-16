@@ -28,7 +28,7 @@ export type PptFrameworkGenerationParams = {
   webQuery: string;
   sourceFiles: { id: string; file: File }[];
   t: Translate;
-  setSlides: React.Dispatch<React.SetStateAction<PptSlide[]>>;
+  setPptSlides: React.Dispatch<React.SetStateAction<PptSlide[]>>;
   setChatMessages: React.Dispatch<React.SetStateAction<PptChatRow[]>>;
   setReconcileNote: (s: string) => void;
   setError: (s: string) => void;
@@ -80,7 +80,7 @@ export function usePptFrameworkGeneration(params: PptFrameworkGenerationParams) 
     try {
       const skelData = await postPptSkeleton(p.backendBase, baseBody, { signal });
       let current: PptSlide[] = (skelData.slides || []).map(slideFromServer);
-      p.setSlides(current);
+      p.setPptSlides(current);
       p.setChatMessages([]);
 
       if (current.length === 0) {
@@ -111,7 +111,7 @@ export function usePptFrameworkGeneration(params: PptFrameworkGenerationParams) 
           };
         }
         current = next;
-        p.setSlides([...current]);
+        p.setPptSlides([...current]);
       }
 
       if (signal.aborted) {
@@ -128,7 +128,7 @@ export function usePptFrameworkGeneration(params: PptFrameworkGenerationParams) 
         },
         { signal }
       );
-      p.setSlides((recData.slides || []).map(slideFromServer));
+      p.setPptSlides((recData.slides || []).map(slideFromServer));
       p.setReconcileNote((recData.reply || "").trim());
     } catch (e) {
       if (isAbortError(e)) {

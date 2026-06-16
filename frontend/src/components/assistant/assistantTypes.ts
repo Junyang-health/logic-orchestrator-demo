@@ -1,5 +1,6 @@
 export const SKILLS_STORAGE_KEY = "mindmap_assistant_skills_v1";
 export const ROUNDTABLE_LIB_KEY = "mindmap_roundtable_persona_lib_v1";
+export const COUNSEL_ROSTER_KEY = "mindmap_counsel_roster_v1";
 
 export const ROUNDTABLE_PRESET_INSTRUCTIONS: Record<string, string> = {
   "Skeptical Investor": "Challenge upside; demand evidence, downside cases, and disciplined assumptions.",
@@ -15,6 +16,8 @@ export function presetRoundtableInstruction(name: string): string {
 export type RoundtablePersona = { id: string; name: string; instruction: string };
 export type RoundtableTranscriptRow = { id: string; role: "user" | "persona"; persona_name?: string; content: string };
 
+export type StoredCounselPersona = { name: string; instruction: string };
+
 export function loadRoundtableLib(): { name: string; instruction: string }[] {
   try {
     const raw = localStorage.getItem(ROUNDTABLE_LIB_KEY);
@@ -28,6 +31,25 @@ export function loadRoundtableLib(): { name: string; instruction: string }[] {
         instruction: typeof x.instruction === "string" ? x.instruction.slice(0, 4000) : ""
       }))
       .filter((x) => x.name.trim() && x.instruction.trim());
+  } catch {
+    return [];
+  }
+}
+
+export function loadCounselRoster(): StoredCounselPersona[] {
+  try {
+    const raw = localStorage.getItem(COUNSEL_ROSTER_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x) => x && typeof x === "object")
+      .map((x: Record<string, unknown>) => ({
+        name: typeof x.name === "string" ? x.name.slice(0, 120) : "",
+        instruction: typeof x.instruction === "string" ? x.instruction.slice(0, 8000) : ""
+      }))
+      .filter((x) => x.name.trim() && x.instruction.trim())
+      .slice(0, 8);
   } catch {
     return [];
   }

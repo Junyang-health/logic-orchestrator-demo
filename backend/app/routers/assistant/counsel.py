@@ -78,6 +78,8 @@ class CounselFactBody(CounselGraphIn):
     problem_summary: str = Field(..., min_length=1, max_length=16000)
     questions_asked_so_far: int = Field(default=0, ge=0, le=3)
     thread: List[Dict[str, str]] = Field(default_factory=list)
+    counsel_roster: List[CounselPersonaIn] = Field(default_factory=list, max_length=8)
+    all_threads: Dict[str, List[Dict[str, str]]] = Field(default_factory=dict)
     project_id: Optional[str] = None
     source_file_ids: Optional[List[str]] = None
     source_max_chars: int = Field(default=24_000, ge=0, le=100_000)
@@ -99,12 +101,15 @@ def counsel_fact_question_api(body: CounselFactBody) -> CounselFactResponse:
         llm = llm_assistant_chat()
         out = assistant_counsel.counsel_fact_next_question(
             llm=llm,
+            persona_id=body.persona_id.strip(),
             persona_name=body.persona_name.strip(),
             persona_instruction=body.persona_instruction,
             problem_summary=body.problem_summary,
             questions_asked_so_far=body.questions_asked_so_far,
             thread=body.thread,
             source_context=source,
+            counsel_roster=[p.model_dump() for p in body.counsel_roster],
+            all_threads={str(k): list(v) for k, v in body.all_threads.items()},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Counsel fact question failed: {e}") from e

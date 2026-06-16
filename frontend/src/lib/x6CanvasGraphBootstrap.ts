@@ -410,13 +410,16 @@ export function mountX6CanvasGraph(p: X6CanvasGraphBootstrapParams): () => void 
   const applySizeFromEl = () => {
     const g = p.graphRef.current;
     if (!g) return;
-    const rect = el.getBoundingClientRect();
+    const host = el.parentElement ?? el;
+    const rect = host.getBoundingClientRect();
     const w = Math.max(1, Math.round(rect.width));
     const h = Math.max(1, Math.round(rect.height));
     if (typeof (g as any).resize === "function") {
       (g as any).resize(w, h);
     }
   };
+
+  const resizeHost = el.parentElement ?? el;
 
   const ro = new ResizeObserver(() => {
     cancelAnimationFrame(roRaf1);
@@ -426,7 +429,7 @@ export function mountX6CanvasGraph(p: X6CanvasGraphBootstrapParams): () => void 
     });
   });
 
-  ro.observe(el);
+  ro.observe(resizeHost);
 
   return () => {
     graph.off("node:change:size", scheduleDagreFromNodeSize);

@@ -21,6 +21,8 @@ export type PptFrameworkMdLabels = {
   deckStyleSectionTitle?: string;
   deckStyleName?: string;
   deckStyleBlurb?: string;
+  /** Density / exhibit conventions — inserted after deck style when provided (e.g. localized rules). */
+  layoutRulesBlock?: string;
 };
 
 export function frameworkToMarkdown(
@@ -38,6 +40,9 @@ export function frameworkToMarkdown(
     L.deckStyleSectionTitle && L.deckStyleName && L.deckStyleBlurb
       ? `## ${L.deckStyleSectionTitle}\n\n**${L.deckStyleName}** — ${L.deckStyleBlurb}\n\n---\n\n`
       : "";
+  const layout = L.layoutRulesBlock?.trim()
+    ? `${L.layoutRulesBlock.trim()}\n\n---\n\n`
+    : "";
   const body = slides
     .map((s, i) => {
       const vis = (s.visual || "").trim();
@@ -55,7 +60,7 @@ export function frameworkToMarkdown(
       );
     })
     .join("\n---\n\n");
-  return head + deck + body;
+  return head + deck + layout + body;
 }
 
 export type PptPromptI18n = {
@@ -76,6 +81,8 @@ export function frameworkToPptPrompt(
     /** Preset: title line + blurb to steer an external PPT / image model. */
     deckStyleName?: string;
     deckStyleBlurb?: string;
+    /** Slide density + exhibit-type rules (localized), shown before slides in the prompt. */
+    layoutRules?: string;
   }
 ): string {
   const { style = "", audience = "", intent = "" } = options;
@@ -89,9 +96,11 @@ export function frameworkToPptPrompt(
     options.deckStyleName && options.deckStyleBlurb
       ? `**Deck style (mandatory): ${options.deckStyleName}**\n${options.deckStyleBlurb}`
       : "";
+  const layout = (options.layoutRules || "").trim();
   const pre = [
     "You are given a deck outline. Create slides that follow this structure. Prefer infographics, charts, and tables over walls of text for emphasis and contrast, consistent with the deck style below.",
     deck,
+    layout,
     intent && `**Purpose / intent:**\n${intent}`,
     audience && `**Audience:**\n${audience}`,
     style && `**Additional look & feel (on top of deck style):**\n${style}`,

@@ -37,6 +37,8 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
     presetOnPanel,
     togglePresetPersona,
     presetPreview,
+    nuwaOnPanel,
+    toggleNuwaPersona,
     libRowOnPanel,
     toggleLibPersona,
     libEditName,
@@ -75,6 +77,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
     submitFactAnswer,
     factBusyAny,
     runNgt,
+    skipFactPersona,
     collisionAreas,
     selectedCollisionIds,
     runCollisions,
@@ -82,6 +85,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
     startDebate,
     currentDebateArea,
     debateTranscripts,
+    debateAreaIdx,
     debateMsgCount,
     debateMsgLimit,
     debatePaused,
@@ -112,7 +116,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
     submitDebateUser
   } = runtime;
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden text-[11px] text-slate-800 dark:text-slate-100">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden text-sm text-slate-800 dark:text-slate-100">
       <div className="mx-auto w-full max-w-[920px] shrink-0 space-y-2">
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-start gap-3">
@@ -144,16 +148,16 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
                   }
                 />
                 {(phase === "vote" || phase === "finalize") && voteSummary.length > 0 ? (
-                  <p className="text-center font-mono text-[7px] uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
+                  <p className="text-center font-mono text-[9px] uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
                     {t("counsel_hud_sentiment_caption")}
                   </p>
                 ) : null}
                 {phase === "fact" && problemSummary.trim().length > 0 ? (
                   <details className="rounded-xl border border-slate-200/60 bg-white/40 px-2 py-1.5 dark:border-slate-600/50 dark:bg-slate-900/30">
-                    <summary className="cursor-pointer select-none font-mono text-[8px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       {t("counsel_fact_read_full_brief")}
                     </summary>
-                    <p className="mm-assistant-thin-scrollbar mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-[10px] leading-relaxed text-slate-700 dark:text-slate-200">
+                    <p className="mm-assistant-thin-scrollbar mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-700 dark:text-slate-200">
                       {problemSummary.trim()}
                     </p>
                   </details>
@@ -161,7 +165,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
               </div>
             ) : null}
             {phase !== "problem" ? (
-              <button type="button" className="ios-button shrink-0 self-center py-1 text-[10px]" onClick={() => resetSession()}>
+              <button type="button" className="ios-button shrink-0 self-center py-1 text-xs" onClick={() => resetSession()}>
                 {t("counsel_reset")}
               </button>
             ) : null}
@@ -181,7 +185,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
                     <div
                       key={key}
                       className={[
-                        "flex min-w-0 flex-1 items-center justify-center gap-0.5 rounded-full px-1.5 py-1.5 text-center text-[8px] font-semibold uppercase tracking-wide transition-all sm:px-2 sm:text-[9px]",
+                        "flex min-w-0 flex-1 items-center justify-center gap-0.5 rounded-full px-1.5 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wide transition-all sm:px-2 sm:text-[11px]",
                         current
                           ? "bg-white text-slate-900 shadow-sm dark:bg-cyan-100/95 dark:text-slate-900"
                           : done
@@ -201,7 +205,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
         </div>
       </div>
       {error ? (
-        <p className="mx-auto w-full max-w-[800px] text-[10px] text-red-600 dark:text-red-400">{error}</p>
+        <p className="mx-auto w-full max-w-[800px] text-xs text-red-600 dark:text-red-400">{error}</p>
       ) : null}
 
       {phase === "setup" ? (
@@ -214,6 +218,8 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
           presetOnPanel={presetOnPanel}
           togglePresetPersona={togglePresetPersona}
           presetPreview={presetPreview}
+          nuwaOnPanel={nuwaOnPanel}
+          toggleNuwaPersona={toggleNuwaPersona}
           libRowOnPanel={libRowOnPanel}
           toggleLibPersona={toggleLibPersona}
           libEditName={libEditName}
@@ -270,6 +276,7 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
           onFocusCapturePersona={setFactFocusPersonaId}
           onPersonaCardBlur={onFactPersonaCardBlur}
           submitFactAnswer={submitFactAnswer}
+          onSkipPersona={skipFactPersona}
           factBusyAny={factBusyAny}
           busy={busy}
           onContinueNgt={() => void runNgt()}
@@ -295,6 +302,8 @@ export default function CounselFlowView({ runtime }: { runtime: CounselFlowRunti
           debateMsgLimit={debateMsgLimit}
           busy={busy}
           debatePaused={debatePaused}
+          selectedAreaCount={selectedCollisionIds.size}
+          currentAreaIndex={debateAreaIdx}
           onExtendMessageLimit={onExtendDebateMessageLimit}
           onEndCurrentAreaOrNext={() => endCurrentAreaOrNext()}
           onAdvanceDebate={() => void advanceDebate()}

@@ -13,6 +13,8 @@ export type AreaLeaderboardRow = {
   areaTitle: string;
   winner: { label: string; bubbles: VoteFootprint[] };
   runnerUp: { label: string; bubbles: VoteFootprint[] };
+  winnerCount: number;
+  runnerUpCount: number;
 };
 
 function personaSentimentKey(p: CounselPersona): string {
@@ -78,7 +80,9 @@ export function buildAreaLeaderboards(
       areaId: va.area_id,
       areaTitle: title,
       winner: { label: winnerLabel, bubbles: winnerBubbles },
-      runnerUp: { label: runnerLabel || "—", bubbles: runnerBubbles }
+      runnerUp: { label: runnerLabel || "—", bubbles: runnerBubbles },
+      winnerCount: winnerBubbles.length,
+      runnerUpCount: runnerBubbles.length
     });
   }
   return out;

@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import type { Graph } from "@antv/x6";
 import type { MindmapJson } from "../types/mindmap";
 import type { ReviewComment } from "../types/review";
@@ -30,6 +30,8 @@ export type UseX6CanvasGraphSyncParams = {
   hydratingRef: MutableRefObject<boolean>;
   loadMindmap: (graph: Graph, mindmap: MindmapJson) => void;
   setSelectedEdgeId: (id: string | null) => void;
+  /** When switching from slide deck back to mindmap, force resize + center so X6 refits. */
+  centerWorkspace: "canvas" | "slide_deck";
 };
 
 /**
@@ -37,6 +39,17 @@ export type UseX6CanvasGraphSyncParams = {
  * badges, dock resize, selection chrome, center requests, theme/grid/sandbox, mindmap reload, cluster patch.
  */
 export function useX6CanvasGraphSync(p: UseX6CanvasGraphSyncParams) {
+  const prevWorkspaceRef = useRef<"canvas" | "slide_deck" | null>(null);
+  const measureViewport = () => {
+    const el = p.containerRef.current;
+    const host = el?.parentElement ?? el;
+    const rect = host?.getBoundingClientRect();
+    return {
+      width: Math.max(1, Math.round(rect?.width ?? 1)),
+      height: Math.max(1, Math.round(rect?.height ?? 1))
+    };
+  };
+
   useEffect(() => {
     applyReviewCommentBadgesToGraph(p.graphRef.current, p.reviewComments, {
       muteValidationRef: p.reviewBadgeMuteValidationRef
@@ -51,16 +64,30 @@ export function useX6CanvasGraphSync(p: UseX6CanvasGraphSyncParams) {
     const prev = p.lastDockLayoutKeyRef.current;
     const current = p.dockLayoutKey;
     p.lastDockLayoutKeyRef.current = current;
-    const rightDockToggled = prev != null && prev.split("|")[0] !== current.split("|")[0];
+    const switchedToCanvas =
+      prevWorkspaceRef.current != null &&
+      prevWorkspaceRef.current !== "canvas" &&
+      p.centerWorkspace === "canvas";
+    prevWorkspaceRef.current = p.centerWorkspace;
 
-    const apply = (alsoCenter: boolean) => {
-      const rect = el.getBoundingClientRect();
-      const w = Math.max(1, Math.round(rect.width));
-      const h = Math.max(1, Math.round(rect.height));
+    const viewportMode = switchedToCanvas ? "center" : "resize";
+
+    const apply = (mode: "resize" | "center" | "refit") => {
+      const { width: w, height: h } = measureViewport();
       if (typeof (g as any).resize === "function") {
         (g as any).resize(w, h);
       }
-      if (alsoCenter && typeof (g as any).centerContent === "function") {
+      if (mode === "refit" && typeof (g as any).zoomToFit === "function") {
+        try {
+          (g as any).zoomToFit({
+            padding: { top: 48, right: 72, bottom: 48, left: 48 },
+            maxScale: 1
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      if ((mode === "center" || mode === "refit") && typeof (g as any).centerContent === "function") {
         try {
           (g as any).centerContent();
         } catch {
@@ -69,18 +96,18 @@ export function useX6CanvasGraphSync(p: UseX6CanvasGraphSyncParams) {
       }
     };
 
-    apply(rightDockToggled);
+    apply(viewportMode);
     let raf0 = 0;
     let raf1 = 0;
     let raf2 = 0;
     raf0 = requestAnimationFrame(() => {
       raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => apply(rightDockToggled));
+        raf2 = requestAnimationFrame(() => apply(viewportMode));
       });
     });
 
-    const t1 = window.setTimeout(() => apply(rightDockToggled), 50);
-    const t2 = window.setTimeout(() => apply(rightDockToggled), 180);
+    const t1 = window.setTimeout(() => apply(viewportMode), 50);
+    const t2 = window.setTimeout(() => apply(viewportMode), 180);
 
     return () => {
       cancelAnimationFrame(raf0);
@@ -89,7 +116,7 @@ export function useX6CanvasGraphSync(p: UseX6CanvasGraphSyncParams) {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [p.dockLayoutKey]);
+  }, [p.dockLayoutKey, p.centerWorkspace]);
 
   useEffect(() => {
     const g = p.graphRef.current;

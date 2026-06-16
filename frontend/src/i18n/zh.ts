@@ -323,8 +323,133 @@ export const zh: Record<MessageKey, string> = {
     "在上方选择分支，再填写报告意图、受众与源材料说明。系统按咨询式章节框架（参考 Deer-Flow consulting-analysis）生成，可整章/全文用 AI 优化，并做数据充分性检查，最后可下载各章提示词与视觉说明的 Markdown。",
   export_intro:
     "分支按深度列出。选择节点会选中整棵子树；取消会清除该子树。仅部分子节点选中时父级可能显示为部分选中。导出会合并所有选中子树。",
+
+  workspace_canvas: "导图",
+  workspace_slide_deck: "幻灯片",
+  workspace_toggle_aria: "切换主工作区",
+
+  slide_deck_empty: "大纲中还没有页。请在导出 → PPT 框架中生成，或返回导图。",
+  slide_deck_back_canvas: "返回导图",
+  slide_deck_counter: "第 {current} / {total} 页",
+  slide_deck_prev: "上一页",
+  slide_deck_next: "下一页",
+  slide_deck_frame_title: "幻灯片预览",
+  slide_deck_no_body: "（暂无正文）",
+  slide_deck_no_html_hint:
+    "问卷完成后会依次生成各页幻灯片预览；之后在 AI 助手或 HTML 编辑器中改动并保存后会自动刷新预览。",
+  slide_deck_wizard_title: "幻灯片生成问卷",
+  slide_deck_wizard_intro:
+    "结合技能镜头补充约束，回答会并入每一页的生成任务上下文。",
+  slide_deck_wizard_skills_hint:
+    "仅当导出区「技能」中打开了 Web / 财经镜头后，才会有对应填空。",
+  slide_deck_design_heading: "版式与风格",
+  slide_deck_design_density: "信息密度",
+  slide_deck_design_surface: "背景与表面处理",
+  slide_deck_design_typography: "字体倾向",
+  slide_deck_design_imagery: "图像取向",
+  slide_deck_design_rhythm: "节奏",
+  slide_deck_density_compact: "紧凑",
+  slide_deck_density_balanced: "均衡",
+  slide_deck_density_spacious: "疏朗",
+  slide_deck_surface_light: "浅色",
+  slide_deck_surface_dark: "深色",
+  slide_deck_surface_glass: "玻璃态",
+  slide_deck_surface_mono: "单色",
+  slide_deck_type_system: "系统无衬线",
+  slide_deck_type_serif: "衬线",
+  slide_deck_type_condensed: "窄体紧凑",
+  slide_deck_imagery_diagram: "示意/图表为主",
+  slide_deck_imagery_illus: "插画感",
+  slide_deck_imagery_photo: "摄影写实",
+  slide_deck_rhythm_minimal: "极简控件",
+  slide_deck_rhythm_standard: "咨询节奏",
+  slide_deck_rhythm_expressive: "更有表现力",
+  slide_deck_ref_upload_label: "参考样式上传",
+  slide_deck_ref_upload_help:
+    "可上传 PNG/JPEG/WebP 或 PDF（缩略/版式摘录），用以约束配色、栅格或字体观感。",
+  slide_deck_ref_on_server: "已保存在服务器",
+  slide_deck_ref_pending: "将随提交上传",
+  slide_deck_q_label_design: "[版式与设计选项]",
+  slide_deck_q_label_design_json: "[设计选项 JSON]",
+  slide_deck_q_label_refs: "[参考文件名]",
+  slide_deck_wizard_no_session: "没有幻灯片会话 — 请从「导出 → PPT」重新开始。",
+  slide_deck_wizard_submit_err: "保存问卷失败 — 请重试。",
+  slide_deck_wizard_submitting: "保存中…",
+  slide_deck_q_global: "整份演示的侧重点与口吻",
+  slide_deck_q_global_ph: "受众节奏、禁用表述、引用方式…",
+  slide_deck_q_web: "Web 镜头 — 信息来源与地面",
+  slide_deck_q_web_ph: "检索角度、可信站点、需在页上体现的免责…",
+  slide_deck_q_finance: "财经镜头 — 数字叙事",
+  slide_deck_q_finance_ph: "关注指标、量级单位、口径与情景措辞…",
+  slide_deck_q_extra_skills: "自定义技能（从导出区粘贴）",
+  slide_deck_q_extra_skills_ph: "贴上你在导出面板导入或书写的技能条目。",
+  slide_deck_q_label_global: "[整份口径]",
+  slide_deck_q_label_web: "[Web 镜头]",
+  slide_deck_q_label_finance: "[财经镜头]",
+  slide_deck_q_label_extra: "[自定义技能]",
+  slide_deck_style_prefix: "问卷约束 — 当前大纲含 {slides} 页：",
+  slide_deck_style_fallback_default: "按咨询幻灯片结构与大纲事实忠实呈现。",
+  slide_deck_wizard_submit: "继续 — 按顺序依次生成幻灯片",
+  slide_deck_generating_banner: "正在按顺序生成各页幻灯片预览…",
+  slide_deck_generating_progress: "正在生成幻灯片 HTML {cur} / {total}（已完成 {pct}%）",
+  slide_deck_rail_assist: "AI 助手",
+  slide_deck_rail_edit: "编辑 HTML",
+  slide_deck_chat_intro:
+    "可要求改文案、版式对比、图示风格等；助手会直接改写居中预览页面的 HTML。",
+  slide_deck_chat_ph: "对本页的指令（⌘/Ctrl + Enter 发送）",
+  slide_deck_chat_send: "发送",
+  slide_deck_chat_sending: "发送中…",
+  slide_deck_chat_err: "请求失败 — 可直接用 HTML 编辑。",
+  slide_deck_chat_generic_reply: "已根据指令更新预览。",
+  slide_deck_edit_load: "从服务器加载",
+  slide_deck_edit_save: "保存到预览",
+  slide_deck_link_exports: "打开导出面板",
+  slide_deck_rail_framework: "大纲",
+  slide_deck_framework_heading: "本页大纲与视觉说明",
+  slide_deck_framework_intro:
+    "修改会写入服务器大纲。「保存大纲」仅更新结构；「重新生成」仅用 AI 重写此页 HTML。",
+  slide_deck_fw_title: "标题",
+  slide_deck_fw_subtitle: "副标题",
+  slide_deck_fw_content: "主叙事（要点/正文说明）",
+  slide_deck_fw_visual: "视觉规划",
+  slide_deck_fw_visual_hint:
+    "描述版面、图表、对比表以及插图的位置。若需要 AI 生成图，写明需求——生成时会插入占位并附带图像提示字段。",
+  slide_deck_fw_save: "保存大纲",
+  slide_deck_fw_saving: "保存中…",
+  slide_deck_fw_regen: "重新生成此页",
+  slide_deck_fw_regenerating: "保存并入队…",
+  slide_deck_fw_err: "无法更新大纲。",
+  slide_deck_strip_delete: "删除此页",
+  slide_deck_strip_delete_confirm: "从大纲中删除此页？服务器上的预览文件可能会保留直至被覆盖。",
+  slide_deck_strip_drag_handle: "拖拽以调整顺序",
+  slide_deck_strip_drag_hint: "拖到另一张缩略图上即可换位",
+  slide_deck_strip_save_err: "无法保存幻灯片顺序 — 请重试。",
+
   ppt_intro:
     "先选**演示风格**预设（咨询、政府/公文、学术或创意）— 会驱动整份框架、视觉说明与导出。每页有内容与**视觉**区（信息图/图表/表格形成对比与强调）。可编辑或对话，再导出。**语言**：意图、受众（及可选的观感）请主要用你希望的成稿语言书写，模型会按此生成，不固定为某一种界面语言。",
+  ppt_center_deck_hint:
+    "在主区左上角选 **幻灯片** 可全屏 16:9 演示；有活跃构建会话且已生成 HTML 时，中间会显示对应页面。",
+  ppt_workspace_framework: "大纲与优化",
+  ppt_workspace_builder: "幻灯片构建（HTML + 导出）",
+  ppt_builder_title: "幻灯片任务队列",
+  ppt_builder_workflow_intro:
+    "大纲在此处确认无误后点击下方按钮：主区切换到幻灯片段，先做问卷（与技能挂钩），随后自动逐页生成；可用右侧 AI 或 HTML 精修。",
+  ppt_builder_cta_slide_deck: "开启幻灯片段并开始构建",
+  ppt_builder_intro:
+    "用当前大纲在后端创建构建会话。API 运行时会**自动处理**任务（逐页 HTML、整包 PPTX/PDF）。若设置环境变量 `UNBOX_EMBEDDED_SLIDE_WORKER=0`，则需单独在 `backend/` 运行 `python -m worker`。",
+  ppt_builder_worker_hint:
+    "若重启后端后任务仍长时间停在 pending，请确认已保存代码并重启 API。仅当 `UNBOX_EMBEDDED_SLIDE_WORKER=0` 时才必须单独开终端运行 `python -m worker`。",
+  ppt_builder_start: "用当前大纲开始会话",
+  ppt_builder_starting: "正在开始…",
+  ppt_builder_session: "会话",
+  ppt_builder_export_pptx: "排队导出 PPTX",
+  ppt_builder_export_pdf: "排队导出 PDF",
+  ppt_builder_download_pptx: "下载 deck.pptx",
+  ppt_builder_download_pdf: "下载 deck.pdf",
+  ppt_builder_generate_slide: "生成 HTML",
+  ppt_builder_preview: "预览",
+  ppt_builder_ready_in_deck: "已在幻灯片区展示",
+  ppt_builder_err_slides: "请先生成或添加大纲中的页。",
   ppt_brief: "目标设定（给整份演示）",
   ppt_deck_style_label: "演示风格（预设）",
   ppt_deck_style_help:
@@ -377,6 +502,20 @@ export const zh: Record<MessageKey, string> = {
   ppt_visual_ph: "例：左 60% 分组柱状图（分板块两年对比）+ 右 40% 大数字高亮，下方两列短要点…",
   ppt_visual_empty_md: "（待补 — 建议采用信息图、图表或表格以突出与对比。）",
   ppt_prompt_visual_fb: "写清主图形、表或图类型，版式分栏与对比关系；有数据时尽量避免整页纯文字。",
+  ppt_layout_rules_block: `## 页面密度与展品（生成规则）
+
+### 两类密度
+每一页必须是 **Standard（标准）** 或 **Dense（密集）**。每页「视觉」方案的第一行必须且仅为 \`Density: Standard\` 或 \`Density: Dense\`。
+
+**Standard** — 基线信息量。需覆盖版式要素：（1）**标题** — 结论式或行动式标题；（2）**副标题** — 补充标题的一层要点；（3）**主展品** — 承载核心信息的主视觉（主图/主表）；（4）**要点高亮** — 底部一条关键 takeaway 或高亮区；（5）**页脚** — 数据来源、口径、调研名称、期间或出处说明。
+
+**Dense** — 用于**关键支撑证据**（如市场数据、对标比较、价值拆解）。标题、副标题、底部要点与页脚与 Standard 相同；将「单一主展品」替换为**最多四个**按逻辑顺序排列的展品（在视觉方案中标注 **Exhibit 1**–**Exhibit 4**）。每个面板保持紧凑、可扫读。
+
+### 展品类型（参考）
+- **市场/趋势数据** → **趋势图** — 用色区分重点区间；坐标、单位与关键数字标签齐全。
+- **竞争对标** → **矩阵表** — 选手或方案 × 评价维度，对比关系明确。
+- **价值/差异说明** → **价值桥** — 瀑布或桥图，从起点值走到终点值。
+- **风险/暴露** → **热力图** — 二维强度格 + 图例与坐标说明。`,
   ppt_add_slide: "新增一页",
   ppt_slide_untitled: "未命名",
   ppt_export_prompt: "下载 PPT 提示词",

@@ -15,7 +15,8 @@ const devApiProxy = Object.fromEntries(
     "/validate",
     "/review",
     "/assistant",
-    "/export"
+    "/export",
+    "/slide-build"
   ].map((prefix) => [prefix, { target: DEV_API_TARGET, changeOrigin: true }] as const)
 );
 

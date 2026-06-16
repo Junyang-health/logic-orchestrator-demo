@@ -2,6 +2,14 @@ import type { CounselPersona } from "../../../lib/counselApi";
 import { useI18n } from "../../../i18n/useI18n";
 import { REVIEW_PERSONAS } from "../../../types/review";
 import CounselBoardroomTable from "../CounselBoardroomTable";
+import { NUWA_PERSONAS } from "../nuwaPersonaCatalog";
+
+const BUILT_IN_SUMMARIES: Record<string, string> = {
+  "Skeptical Investor": "evidence, downside, discipline",
+  "Risk Analyst": "operational, market, regulatory risk",
+  "Friendly Coach": "clarity, momentum, practical next steps",
+  "Devil's Advocate": "counterarguments, weak assumptions, failure modes"
+};
 
 export type CounselPhaseSetupProps = {
   personas: CounselPersona[];
@@ -12,6 +20,8 @@ export type CounselPhaseSetupProps = {
   presetOnPanel: (name: string) => boolean;
   togglePresetPersona: (name: string) => void;
   presetPreview: (name: string) => string;
+  nuwaOnPanel: (id: string, name: string) => boolean;
+  toggleNuwaPersona: (id: string, name: string) => void;
   libRowOnPanel: (row: { name: string; instruction: string }) => boolean;
   toggleLibPersona: (name: string, instruction: string) => void;
   libEditName: string | null;
@@ -43,6 +53,8 @@ export default function CounselPhaseSetup(props: CounselPhaseSetupProps) {
     presetOnPanel,
     togglePresetPersona,
     presetPreview,
+    nuwaOnPanel,
+    toggleNuwaPersona,
     libRowOnPanel,
     toggleLibPersona,
     libEditName,
@@ -63,31 +75,89 @@ export default function CounselPhaseSetup(props: CounselPhaseSetupProps) {
     onStartProblem
   } = props;
 
-  return (
-    <div className="mx-auto flex min-h-0 w-full max-w-[800px] flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto">
-      <div className="flex flex-[2] shrink-0 flex-col items-stretch justify-center overflow-visible px-1 py-3">
-        <CounselBoardroomTable
-          variant="hero"
-          personas={personas}
-          centerText={problemDraft}
-          centerPlaceholder={t("counsel_boardroom_placeholder")}
-          setupMode
-          onRemoveSeat={onRemovePersona}
-          leadLabel={t("counsel_lead_councilor")}
-          emptySeatAria={t("counsel_seat_empty")}
-          hostChairLabel={t("counsel_host_chair")}
-        />
-        <div className="mt-2 text-[9px] tabular-nums text-slate-500 dark:text-slate-400">
-          {t("counsel_personas_count", { n: personas.length })}
-        </div>
-      </div>
+  const candidateButtonClass = (on: boolean, muted = false) =>
+    [
+      "min-h-[3.35rem] rounded-2xl border px-2.5 py-2 text-left text-[10px] font-medium leading-tight transition",
+      on
+        ? "border-sky-500/40 bg-sky-500/[0.12] text-sky-950 opacity-[0.58] ring-1 ring-sky-400/25 dark:text-sky-100"
+        : muted
+          ? "border-slate-200/80 bg-slate-100/80 text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800/70 dark:text-slate-100"
+          : "border-slate-200/80 bg-white/90 text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800/80"
+    ].join(" ");
 
-      <div className="mm-assistant-thin-scrollbar flex min-h-0 flex-[2] flex-col overflow-y-auto pr-1">
-        <p className="text-[9px] leading-snug text-slate-500 dark:text-slate-400">{t("counsel_setup_help")}</p>
-        <div className="mt-2 text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-          {t("counsel_library_title")}
-        </div>
-        <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+  return (
+    <div className="mx-auto flex min-h-0 w-full max-w-[920px] flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto">
+      <div className="grid shrink-0 gap-3 lg:grid-cols-[minmax(0,1.65fr)_minmax(18rem,0.95fr)]">
+        <section className="rounded-2xl border border-slate-200/60 bg-white/35 p-3 dark:border-slate-700/50 dark:bg-slate-900/25">
+          <div className="text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+            Members in session
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {personas.length > 0 ? (
+              personas.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onRemovePersona(p.id)}
+                  className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10px] font-medium text-sky-100"
+                  title={p.instruction}
+                >
+                  {p.name}
+                </button>
+              ))
+            ) : (
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">No counsel members selected yet.</div>
+            )}
+          </div>
+          <div className="mt-2 text-[9px] tabular-nums text-slate-500 dark:text-slate-400">
+            {t("counsel_personas_count", { n: personas.length })}
+          </div>
+
+          <div className="mt-3 max-w-[720px]">
+            <CounselBoardroomTable
+              variant="hero"
+              personas={personas}
+              centerText={problemDraft}
+              centerPlaceholder={t("counsel_boardroom_placeholder")}
+              setupMode
+              onRemoveSeat={onRemovePersona}
+              leadLabel={t("counsel_lead_councilor")}
+              emptySeatAria={t("counsel_seat_empty")}
+              hostChairLabel={t("counsel_host_chair")}
+              className="scale-[0.92] origin-top-left"
+            />
+          </div>
+
+          <p className="mt-2 text-[9px] leading-snug text-slate-500 dark:text-slate-400">{t("counsel_setup_help")}</p>
+          <div className="mt-3 text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+            Potential counsel members
+          </div>
+          <div className="mt-2 text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+            Nuwa
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+            {NUWA_PERSONAS.map((x) => {
+              const on = nuwaOnPanel(x.id, x.name);
+              return (
+                <button
+                  key={x.id}
+                  type="button"
+                  title={x.instruction}
+                  disabled={(!on && personas.length >= 8) || busy}
+                  onClick={() => toggleNuwaPersona(x.id, x.name)}
+                  className={candidateButtonClass(on)}
+                >
+                  <div>{x.name}</div>
+                  <div className="mt-0.5 text-[9px] opacity-75">{on ? "In session" : x.summary}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+            Built-in
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
           {REVIEW_PERSONAS.map((pn) => {
             const on = presetOnPanel(pn);
             return (
@@ -97,18 +167,21 @@ export default function CounselPhaseSetup(props: CounselPhaseSetupProps) {
                 title={presetPreview(pn)}
                 disabled={(!on && personas.length >= 8) || busy}
                 onClick={() => togglePresetPersona(pn)}
-                className={[
-                  "min-h-[2.25rem] rounded-full border px-1 py-1 text-center text-[8px] font-medium leading-tight transition",
-                  on
-                    ? "border-sky-500/40 bg-sky-500/[0.12] text-sky-950 opacity-[0.58] ring-1 ring-sky-400/25 dark:text-sky-100"
-                    : "border-slate-200/80 bg-white/90 text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800/80"
-                ].join(" ")}
+                className={candidateButtonClass(on)}
               >
-                {on ? "✓ " : ""}
-                <span className="line-clamp-2">{pn}</span>
+                <div>{pn}</div>
+                <div className="mt-0.5 text-[9px] opacity-75">{on ? "In session" : BUILT_IN_SUMMARIES[pn] || "built-in review lens"}</div>
               </button>
             );
           })}
+          </div>
+
+          {rtLib.length > 0 ? (
+            <>
+              <div className="mt-3 text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                Saved
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
           {rtLib.map((x) => {
             const on = libRowOnPanel(x);
             return (
@@ -118,21 +191,18 @@ export default function CounselPhaseSetup(props: CounselPhaseSetupProps) {
                 title={x.instruction}
                 disabled={(!on && personas.length >= 8) || busy}
                 onClick={() => toggleLibPersona(x.name, x.instruction)}
-                className={[
-                  "min-h-[2.25rem] rounded-full border px-1 py-1 text-center text-[8px] font-medium leading-tight transition",
-                  on
-                    ? "border-sky-500/40 bg-sky-500/[0.12] text-sky-950 opacity-[0.58] ring-1 ring-sky-400/25 dark:text-sky-100"
-                    : "border-slate-200/80 bg-slate-100/80 text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800/70 dark:text-slate-100"
-                ].join(" ")}
+                className={candidateButtonClass(on, true)}
               >
-                {on ? "✓ " : ""}
-                <span className="line-clamp-2">{x.name}</span>
+                <div>{x.name}</div>
+                <div className="mt-0.5 line-clamp-2 text-[9px] opacity-75">{on ? "In session" : x.instruction}</div>
               </button>
             );
           })}
-        </div>
+              </div>
+            </>
+          ) : null}
 
-        <details className="mt-3 rounded-lg border border-slate-200/75 bg-white/50 dark:border-slate-600/50 dark:bg-slate-900/30">
+          <details className="mt-3 rounded-lg border border-slate-200/75 bg-white/50 dark:border-slate-600/50 dark:bg-slate-900/30">
           <summary className="cursor-pointer select-none px-2 py-2 text-[9px] font-medium text-slate-600 dark:text-slate-300">
             {t("counsel_manage_saved")}
           </summary>
@@ -208,12 +278,13 @@ export default function CounselPhaseSetup(props: CounselPhaseSetupProps) {
             ))}
           </div>
         </details>
+        </section>
 
-        <details className="mt-2 rounded-lg border border-slate-200/75 bg-white/50 p-2 dark:border-slate-600/50 dark:bg-slate-900/30">
-          <summary className="cursor-pointer select-none text-[9px] font-semibold text-slate-600 dark:text-slate-300">
-            {t("counsel_custom_toggle")}
-          </summary>
-          <div className="mt-2 space-y-2 border-t border-slate-200/60 pt-2 dark:border-slate-700/50">
+        <section className="rounded-2xl border border-slate-200/60 bg-white/35 p-3 dark:border-slate-700/50 dark:bg-slate-900/25">
+          <div className="text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+            Create custom member
+          </div>
+          <div className="mt-2 space-y-2">
             <label className="block text-[10px] text-slate-700 dark:text-slate-200">
               {t("rt_custom_name")}
               <input
@@ -252,28 +323,28 @@ export default function CounselPhaseSetup(props: CounselPhaseSetupProps) {
             {persistLibHint ? (
               <p className="text-[9px] text-slate-500 dark:text-slate-400">{t("rt_saved_local")}</p>
             ) : null}
-          </div>
-        </details>
-      </div>
 
-      <div className="flex flex-[1] shrink-0 flex-col justify-end gap-2 border-t border-slate-200/60 pt-3 dark:border-slate-700/45">
-        <label className="block shrink-0">
-          <span className="text-[9px] font-medium text-slate-600 dark:text-slate-400">{t("counsel_problem_draft")}</span>
-          <textarea
-            className="mt-1 w-full resize-none rounded-2xl border border-slate-200 bg-white p-2.5 text-[11px] dark:border-slate-600 dark:bg-slate-900"
-            rows={2}
-            value={problemDraft}
-            onChange={(e) => onProblemDraftChange(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="ios-button-primary w-full shrink-0 rounded-2xl py-2.5 text-[11px] font-semibold disabled:opacity-50"
-          disabled={personas.length < 4 || personas.length > 8 || busy}
-          onClick={onStartProblem}
-        >
-          {t("counsel_start_problem")}
-        </button>
+            <div className="border-t border-slate-200/60 pt-3 dark:border-slate-700/45">
+              <label className="block shrink-0">
+                <span className="text-[9px] font-medium text-slate-600 dark:text-slate-400">{t("counsel_problem_draft")}</span>
+                <textarea
+                  className="mt-1 w-full resize-none rounded-2xl border border-slate-200 bg-white p-2.5 text-[11px] dark:border-slate-600 dark:bg-slate-900"
+                  rows={5}
+                  value={problemDraft}
+                  onChange={(e) => onProblemDraftChange(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ios-button-primary mt-3 w-full shrink-0 rounded-2xl py-2.5 text-[11px] font-semibold disabled:opacity-50"
+                disabled={personas.length < 4 || personas.length > 8 || busy}
+                onClick={onStartProblem}
+              >
+                {t("counsel_start_problem")}
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

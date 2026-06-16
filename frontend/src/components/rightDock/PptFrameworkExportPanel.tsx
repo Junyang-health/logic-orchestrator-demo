@@ -31,6 +31,7 @@ import PptFrameworkBriefSection from "./pptFramework/PptFrameworkBriefSection";
 import PptFrameworkDeckSection from "./pptFramework/PptFrameworkDeckSection";
 import PptFrameworkGenerateSection from "./pptFramework/PptFrameworkGenerateSection";
 import PptFrameworkRefineSection from "./pptFramework/PptFrameworkRefineSection";
+import PptFrameworkSlideBuildSection from "./pptFramework/PptFrameworkSlideBuildSection";
 import PptFrameworkSkillsSection from "./pptFramework/PptFrameworkSkillsSection";
 import { usePptFrameworkGeneration } from "./pptFramework/usePptFrameworkGeneration";
 import type { PptChatRow, PptCustomSkillRow } from "./pptFramework/types";
@@ -45,11 +46,13 @@ export default function PptFrameworkExportPanel(props: Props) {
   const { t } = useI18n();
   const { backendBase, combined, selectedList } = props;
 
-  const { sourceFiles, skills, toggleSkill } = useUiStore(
+  const { sourceFiles, skills, toggleSkill, pptSlides, setPptSlides } = useUiStore(
     useShallow((s) => ({
       sourceFiles: s.sourceFiles,
       skills: s.skills,
-      toggleSkill: s.toggleSkill
+      toggleSkill: s.toggleSkill,
+      pptSlides: s.pptSlides,
+      setPptSlides: s.setPptSlides
     }))
   );
 
@@ -68,7 +71,6 @@ export default function PptFrameworkExportPanel(props: Props) {
   const [skillImportBusy, setSkillImportBusy] = useState(false);
   const [skillImportMsg, setSkillImportMsg] = useState("");
 
-  const [slides, setSlides] = useState<PptSlide[]>([]);
   const [reconcileNote, setReconcileNote] = useState("");
   const [copyPromptFeedback, setCopyPromptFeedback] = useState<"ok" | "err" | null>(null);
   const copyPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,9 +81,10 @@ export default function PptFrameworkExportPanel(props: Props) {
   const [chatDraft, setChatDraft] = useState("");
   const [targetSlideForChat, setTargetSlideForChat] = useState("all");
 
-  const slidesRef = useRef(slides);
+  const slides = pptSlides;
+  const slidesRef = useRef(pptSlides);
   const chatMessagesRef = useRef<PptChatRow[]>([]);
-  slidesRef.current = slides;
+  slidesRef.current = pptSlides;
   chatMessagesRef.current = chatMessages;
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export default function PptFrameworkExportPanel(props: Props) {
     webQuery,
     sourceFiles,
     t,
-    setSlides,
+    setPptSlides,
     setChatMessages,
     setReconcileNote,
     setError,
@@ -131,6 +134,14 @@ export default function PptFrameworkExportPanel(props: Props) {
 
   const subGraph = useMemo(() => mergeBranchSubgraphs(selectedList, combined), [selectedList, combined]);
   const hasGraph = subGraph.nodes.length > 0;
+
+  const deckTitleForBuild = useMemo(
+    () => (intent.trim().length > 0 ? intent.trim().slice(0, 200) : t("ppt_md_title")),
+    [intent, t]
+  );
+
+  const outlineReady = slides.length > 0;
+  const wizardStep = !outlineReady ? 2 : 3;
 
   const onFetchSkillUrl = useCallback(async () => {
     const u = skillImportUrl.trim();
@@ -214,7 +225,7 @@ export default function PptFrameworkExportPanel(props: Props) {
         slides: slidesToPptRequestPayload(slidesRef.current),
         target_slide_index
       });
-      setSlides((data.slides || []).map(slideFromServer));
+      setPptSlides((data.slides || []).map(slideFromServer));
       setChatMessages((prev) => [
         ...prev,
         { id: newPptSlideId(), role: "assistant", content: (data.reply || "…").trim() || "…" }
@@ -245,7 +256,7 @@ export default function PptFrameworkExportPanel(props: Props) {
   ]);
 
   const moveSlide = (index: number, dir: -1 | 1) => {
-    setSlides((s) => {
+    setPptSlides((s) => {
       const j = index + dir;
       if (j < 0 || j >= s.length) return s;
       const next = [...s];
@@ -255,18 +266,18 @@ export default function PptFrameworkExportPanel(props: Props) {
   };
 
   const removeSlide = (index: number) => {
-    setSlides((s) => s.filter((_, i) => i !== index));
+    setPptSlides((s) => s.filter((_, i) => i !== index));
   };
 
   const addSlide = () => {
-    setSlides((s) => [
+    setPptSlides((s) => [
       ...s,
       { id: newPptSlideId(), title: t("ppt_slide_untitled"), subtitle: "", beat: "", main: "", visual: "" }
     ]);
   };
 
   const updateSlide = (index: number, field: keyof PptSlide, value: string) => {
-    setSlides((s) => s.map((sl, i) => (i === index ? { ...sl, [field]: value } : sl)));
+    setPptSlides((s) => s.map((sl, i) => (i === index ? { ...sl, [field]: value } : sl)));
   };
 
   const exportMd = () => {
@@ -279,7 +290,8 @@ export default function PptFrameworkExportPanel(props: Props) {
       visualEmpty: t("ppt_visual_empty_md"),
       deckStyleSectionTitle: t("ppt_deck_style_md_h"),
       deckStyleName: t(row.name),
-      deckStyleBlurb: t(row.blurb)
+      deckStyleBlurb: t(row.blurb),
+      layoutRulesBlock: t("ppt_layout_rules_block")
     });
     downloadTextFile(`ppt-framework-${Date.now()}.md`, md, "text/markdown;charset=utf-8");
   };
@@ -293,6 +305,7 @@ export default function PptFrameworkExportPanel(props: Props) {
       style,
       deckStyleName: t(row.name),
       deckStyleBlurb: t(row.blurb),
+      layoutRules: t("ppt_layout_rules_block"),
       i18n: {
         contentLabel: t("ppt_section_content"),
         visualLabel: t("ppt_section_visual"),
@@ -330,83 +343,237 @@ export default function PptFrameworkExportPanel(props: Props) {
 
   return (
     <div className="space-y-4 text-sm text-slate-800 dark:text-slate-100">
-      <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("ppt_intro")}</p>
-
-      <PptFrameworkBriefSection
-        intent={intent}
-        onIntent={setIntent}
-        audience={audience}
-        onAudience={setAudience}
-        pageCount={pageCount}
-        onPageCount={setPageCount}
-        deckStyle={deckStyle}
-        onDeckStyle={setDeckStyle}
-        style={style}
-        onStyle={setStyle}
-        enrichBatchSize={enrichBatchSize}
-        onEnrichBatchSize={setEnrichBatchSize}
-      />
-
-      <PptFrameworkSkillsSection
-        skills={skills}
-        toggleSkill={toggleSkill}
-        webQuery={webQuery}
-        onWebQuery={setWebQuery}
-        customSkills={customSkills}
-        onSetCustomSkills={setCustomSkills}
-        skillImportUrl={skillImportUrl}
-        onSkillImportUrl={setSkillImportUrl}
-        skillImportBusy={skillImportBusy}
-        onFetchSkillUrl={onFetchSkillUrl}
-        skillImportMsg={skillImportMsg}
-        sourceFileCount={sourceFiles.length}
-      />
-
-      {error ? (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {error}
+      <div className="rounded-xl border border-violet-200/70 bg-violet-50/50 p-3 dark:border-violet-500/25 dark:bg-violet-950/20">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-200">Deliver</div>
+        <div className="mt-1 text-sm font-semibold text-slate-950 dark:text-slate-50">Deck outline</div>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+          Select mindmap branches, create a slide outline, review it, then build the deck in the center workspace.
+        </p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {[
+            ["1", "Scope", wizardStep >= 1],
+            ["2", "Outline", wizardStep >= 2],
+            ["3", "Build", wizardStep >= 3]
+          ].map(([n, label, active]) => (
+            <div
+              key={label}
+              className={[
+                "rounded-xl border px-2 py-2 text-center",
+                active
+                  ? "border-violet-300/70 bg-white/70 dark:border-violet-400/40 dark:bg-violet-950/25"
+                  : "border-slate-200/60 bg-white/40 opacity-65 dark:border-slate-700/60 dark:bg-slate-900/25"
+              ].join(" ")}
+            >
+              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{n}</div>
+              <div className="mt-1 text-[11px] font-medium text-slate-900 dark:text-slate-100">{label}</div>
+            </div>
+          ))}
         </div>
-      ) : null}
+      </div>
 
-      {reconcileNote ? (
-        <div className="rounded-md border border-slate-200/80 bg-slate-50/90 px-2 py-1.5 text-[11px] leading-relaxed text-slate-700 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-200">
-          <div className="mb-0.5 text-[9px] font-bold uppercase text-slate-500 dark:text-slate-400">
-            {t("ppt_reconcile_label")}
+      <section className="rounded-xl border border-slate-200/80 bg-white/65 p-3 dark:border-slate-700/70 dark:bg-slate-900/35">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+            1
+          </span>
+          <div>
+            <div className="text-xs font-semibold text-slate-900 dark:text-slate-50">Choose content</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">Use the export scope above to define what enters the deck.</div>
           </div>
-          {reconcileNote}
         </div>
-      ) : null}
+        <div className="grid grid-cols-3 gap-1.5 text-center">
+          <div className="rounded-lg border border-slate-200/70 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{selectedList.length}</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">branches</div>
+          </div>
+          <div className="rounded-lg border border-slate-200/70 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{subGraph.nodes.length}</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">nodes</div>
+          </div>
+          <div className="rounded-lg border border-slate-200/70 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{sourceFiles.length}</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">sources</div>
+          </div>
+        </div>
+        {selectedList.length === 0 ? (
+          <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{t("export_err_select")}</p>
+        ) : null}
+      </section>
 
-      <PptFrameworkGenerateSection
-        canGenerate={canGenerate}
-        generateBusy={generateBusy}
-        genPhase={genPhase}
-        onGenerate={handleGenerate}
-        onCancel={cancelGeneration}
-      />
+      <section className="rounded-xl border border-slate-200/80 bg-white/65 p-3 dark:border-slate-700/70 dark:bg-slate-900/35">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+            2
+          </span>
+          <div>
+            <div className="text-xs font-semibold text-slate-900 dark:text-slate-50">Create outline</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">Fill only the essentials, then generate the slide outline.</div>
+          </div>
+        </div>
+        <PptFrameworkBriefSection
+          intent={intent}
+          onIntent={setIntent}
+          audience={audience}
+          onAudience={setAudience}
+          pageCount={pageCount}
+          onPageCount={setPageCount}
+          deckStyle={deckStyle}
+          onDeckStyle={setDeckStyle}
+          style={style}
+          onStyle={setStyle}
+          enrichBatchSize={enrichBatchSize}
+          onEnrichBatchSize={setEnrichBatchSize}
+          showAdvanced={false}
+        />
 
-      <PptFrameworkDeckSection
-        slides={slides}
-        copyPromptFeedback={copyPromptFeedback}
-        onExportPrompt={exportPrompt}
-        onCopyPptPrompt={copyPptPrompt}
-        onExportMd={exportMd}
-        onMoveSlide={moveSlide}
-        onRemoveSlide={removeSlide}
-        onAddSlide={addSlide}
-        onUpdateSlide={updateSlide}
-      />
+        {error ? (
+          <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-100">
+            {error}
+          </div>
+        ) : null}
 
-      <PptFrameworkRefineSection
-        slideCount={slides.length}
-        chatMessages={chatMessages}
-        targetSlideForChat={targetSlideForChat}
-        onTargetSlide={setTargetSlideForChat}
-        chatDraft={chatDraft}
-        onChatDraft={setChatDraft}
-        onSendChat={onSendChat}
-        chatBusy={chatBusy}
-      />
+        {reconcileNote ? (
+          <div className="mt-3 rounded-md border border-slate-200/80 bg-slate-50/90 px-2 py-1.5 text-[11px] leading-relaxed text-slate-700 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-200">
+            <div className="mb-0.5 text-[9px] font-bold uppercase text-slate-500 dark:text-slate-400">
+              {t("ppt_reconcile_label")}
+            </div>
+            {reconcileNote}
+          </div>
+        ) : null}
+
+        <div className="mt-3">
+          <PptFrameworkGenerateSection
+            canGenerate={canGenerate}
+            generateBusy={generateBusy}
+            genPhase={genPhase}
+            onGenerate={handleGenerate}
+            onCancel={cancelGeneration}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 dark:border-slate-700/70 dark:bg-slate-900/35">
+        <div className="mb-4 flex items-start gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[12px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+            3
+          </span>
+          <div>
+            <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">Review & build</div>
+            <div className="mt-1 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+              {outlineReady
+                ? `${slides.length} slides ready. Reorder, refine, and then launch the deck build.`
+                : "Generate an outline first."}
+            </div>
+          </div>
+        </div>
+
+        {outlineReady ? (
+          <>
+            <div className="mb-4 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Slides</div>
+                <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">{slides.length}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Review mode</div>
+                <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Summary first</div>
+              </div>
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Next step</div>
+                <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Build deck</div>
+              </div>
+            </div>
+            <PptFrameworkDeckSection
+              slides={slides}
+              copyPromptFeedback={copyPromptFeedback}
+              onExportPrompt={exportPrompt}
+              onCopyPptPrompt={copyPptPrompt}
+              onExportMd={exportMd}
+              onMoveSlide={moveSlide}
+              onRemoveSlide={removeSlide}
+              onAddSlide={addSlide}
+              onUpdateSlide={updateSlide}
+              showExportActions={false}
+            />
+            <div className="mt-5">
+              <PptFrameworkSlideBuildSection backendBase={backendBase} deckTitle={deckTitleForBuild} deckStyle={deckStyle} slides={slides} />
+            </div>
+          </>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-[13px] leading-relaxed text-slate-500 dark:border-slate-600 dark:text-slate-400">
+            Your generated outline will appear here as a reviewable slide list, followed by a separate build launcher.
+          </div>
+        )}
+      </section>
+
+      <details className="rounded-xl border border-slate-200/80 bg-white/50 p-3 dark:border-slate-700/70 dark:bg-slate-900/30">
+        <summary className="cursor-pointer select-none text-xs font-semibold text-slate-700 dark:text-slate-200">
+          Advanced options
+        </summary>
+        <div className="mt-3 space-y-4 border-t border-slate-200/70 pt-3 dark:border-slate-700/70">
+          <div>
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {t("ppt_enrich_batch")}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              className="ios-field w-28 text-xs"
+              value={enrichBatchSize}
+              onChange={(e) => setEnrichBatchSize(Math.min(8, Math.max(1, Number(e.target.value) || 3)))}
+              title={t("ppt_enrich_batch_help")}
+            />
+            <p className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">{t("ppt_enrich_batch_help")}</p>
+          </div>
+
+          <PptFrameworkSkillsSection
+            skills={skills}
+            toggleSkill={toggleSkill}
+            webQuery={webQuery}
+            onWebQuery={setWebQuery}
+            customSkills={customSkills}
+            onSetCustomSkills={setCustomSkills}
+            skillImportUrl={skillImportUrl}
+            onSkillImportUrl={setSkillImportUrl}
+            skillImportBusy={skillImportBusy}
+            onFetchSkillUrl={onFetchSkillUrl}
+            skillImportMsg={skillImportMsg}
+            sourceFileCount={sourceFiles.length}
+          />
+
+          {outlineReady ? (
+            <>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" className="ios-button py-1 text-xs" onClick={exportPrompt}>
+                  {t("ppt_export_prompt")}
+                </button>
+                <button type="button" className="ios-button py-1 text-xs" onClick={() => void copyPptPrompt()}>
+                  {t("ppt_copy_prompt")}
+                </button>
+                <button type="button" className="ios-button py-1 text-xs" onClick={exportMd}>
+                  {t("ppt_export_md")}
+                </button>
+                {copyPromptFeedback === "ok" ? (
+                  <span className="self-center text-[10px] text-emerald-600 dark:text-emerald-400">{t("ppt_copied")}</span>
+                ) : copyPromptFeedback === "err" ? (
+                  <span className="self-center text-[10px] text-rose-600 dark:text-rose-400">{t("ppt_copy_failed")}</span>
+                ) : null}
+              </div>
+              <PptFrameworkRefineSection
+                slideCount={slides.length}
+                chatMessages={chatMessages}
+                targetSlideForChat={targetSlideForChat}
+                onTargetSlide={setTargetSlideForChat}
+                chatDraft={chatDraft}
+                onChatDraft={setChatDraft}
+                onSendChat={onSendChat}
+                chatBusy={chatBusy}
+              />
+            </>
+          ) : null}
+        </div>
+      </details>
     </div>
   );
 }

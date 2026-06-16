@@ -115,11 +115,13 @@ export default function X6Canvas(props: {
   }, []);
 
   const canvasCenterOnNodeRequest = useUiStore((s) => s.canvasCenterOnNodeRequest);
+  const centerWorkspace = useUiStore((s) => s.centerWorkspace);
   useX6CanvasGraphSync({
     graphRef,
     containerRef,
     lastDockLayoutKeyRef,
     dockLayoutKey,
+    centerWorkspace,
     reviewComments,
     reviewBadgeMuteValidationRef,
     selectedNodeId,
