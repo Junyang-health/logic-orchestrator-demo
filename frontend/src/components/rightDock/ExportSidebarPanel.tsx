@@ -89,11 +89,6 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
     () => Object.entries(selectedIds).filter(([, on]) => on).map(([id]) => id),
     [selectedIds]
   );
-  const currentScopeGraph = useMemo(
-    () => (selectedList.length > 0 ? mergeBranchSubgraphs(selectedList, combined) : combined),
-    [selectedList, combined]
-  );
-
   const total = allIds.length;
   const selectedCount = selectedList.length;
   const allSelected = total > 0 && selectedCount === total;
@@ -212,7 +207,7 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
         </div>
         <div className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-50">{t("export_title")}</div>
         <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-          Choose the output first, confirm the current scope, then refine branches only if needed.
+          Choose an output, then refine branches only if needed.
         </p>
         <div className="mt-3 ios-segment w-full flex-wrap">
           <button
@@ -256,43 +251,6 @@ export default function ExportSidebarPanel(props: { graph: Graph | null; backend
           </button>
         </div>
       </div>
-
-      <section className="rounded-2xl border border-slate-200/70 bg-white/55 p-3 dark:border-slate-700/60 dark:bg-slate-900/35">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              Current scope
-            </div>
-            <div className="mt-1 text-xs text-slate-700 dark:text-slate-200">
-              {selectedCount > 0 ? `${selectedCount} branches selected` : "No explicit branch selection yet"}
-            </div>
-          </div>
-          <div className="rounded-full bg-slate-200/75 px-2.5 py-1 text-[9px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            {exportTab === "mindmap" ? "Mind map export" : exportTab === "ppt" ? "Deck export" : "Word export"}
-          </div>
-        </div>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
-            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{selectedList.length}</div>
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">branches</div>
-          </div>
-          <div className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
-            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{currentScopeGraph.nodes.length}</div>
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">nodes</div>
-          </div>
-          <div className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
-            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{props.graph ? "Live" : "Static"}</div>
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">canvas</div>
-          </div>
-        </div>
-        {exportTab === "mindmap" ? (
-          <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_intro")}</p>
-        ) : exportTab === "ppt" ? (
-          <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_ppt_subtitle")}</p>
-        ) : (
-          <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{t("export_word_subtitle")}</p>
-        )}
-      </section>
 
       {exportTab === "mindmap" ? (
         <section className="rounded-2xl border border-slate-200/70 bg-white/55 p-3 dark:border-slate-700/60 dark:bg-slate-900/35">

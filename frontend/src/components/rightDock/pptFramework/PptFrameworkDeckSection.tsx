@@ -49,15 +49,12 @@ export default function PptFrameworkDeckSection({
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-            Slides
+          <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{t("ppt_deck")}</div>
+          <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            {slides.length} slide{slides.length === 1 ? "" : "s"}
           </div>
-          <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{t("ppt_deck")}</div>
-          <p className="mt-1 max-w-[28rem] text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">
-            Review each slide as a story unit first, then expand only the cards you want to edit.
-          </p>
         </div>
         {showExportActions ? (
           <div className="flex flex-wrap items-center gap-1">
@@ -84,19 +81,11 @@ export default function PptFrameworkDeckSection({
           </div>
         ) : null}
       </div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-          {slides.length} slide{slides.length === 1 ? "" : "s"}
-        </span>
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-          Summary-first review
-        </span>
-      </div>
 
       {shouldVirtual ? (
         <div
           ref={parentRef}
-          className="max-h-[min(70vh,560px)] overflow-auto rounded-2xl border border-slate-200/80 bg-slate-50/55 p-2 dark:border-slate-700/70 dark:bg-slate-950/25"
+          className="max-h-[min(70vh,560px)] overflow-auto rounded-lg border border-slate-200/80 bg-white/60 p-2 dark:border-slate-700/70 dark:bg-slate-950/25"
         >
           <div
             className="relative w-full"
@@ -146,7 +135,7 @@ export default function PptFrameworkDeckSection({
 
       <button type="button" className="ios-button mt-3 w-full py-2 text-[12px] font-semibold" onClick={onAddSlide}>
         <Plus className="mr-1 inline h-3.5 w-3.5" />
-        Add slide after last
+        Add slide
       </button>
     </div>
   );

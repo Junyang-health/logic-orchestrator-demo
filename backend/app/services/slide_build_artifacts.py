@@ -70,6 +70,10 @@ _SLIDE_TEMPLATE = """<!DOCTYPE html>
     .slide .visual {{ margin-top: clamp(16px, 3.6vh, 28px); padding: clamp(14px, 2.8vh, 22px); border-radius: 12px; background: rgba(148,163,184,0.12); border: 1px solid rgba(148,163,184,0.25); }}
     .slide table {{ width: 100%; border-collapse: collapse; }}
     .slide th, .slide td {{ padding: 8px 10px; border-bottom: 1px solid rgba(148,163,184,.28); text-align: left; }}
+    .slide .visual {{ min-height: 0; }}
+    .slide .visual > table:only-child {{ height: 100%; table-layout: fixed; }}
+    .slide .visual > table:only-child th,
+    .slide .visual > table:only-child td {{ vertical-align: middle; }}
   </style>
 </head>
 <body>

@@ -141,7 +141,6 @@ export default function PptFrameworkExportPanel(props: Props) {
   );
 
   const outlineReady = slides.length > 0;
-  const wizardStep = !outlineReady ? 2 : 3;
 
   const onFetchSkillUrl = useCallback(async () => {
     const u = skillImportUrl.trim();
@@ -343,72 +342,29 @@ export default function PptFrameworkExportPanel(props: Props) {
 
   return (
     <div className="space-y-4 text-sm text-slate-800 dark:text-slate-100">
-      <div className="rounded-xl border border-violet-200/70 bg-violet-50/50 p-3 dark:border-violet-500/25 dark:bg-violet-950/20">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-200">Deliver</div>
-        <div className="mt-1 text-sm font-semibold text-slate-950 dark:text-slate-50">Deck outline</div>
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
-          Select mindmap branches, create a slide outline, review it, then build the deck in the center workspace.
-        </p>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="border-b border-slate-200/80 pb-3 dark:border-slate-700/70">
+        <div className="text-base font-semibold tracking-tight text-slate-950 dark:text-slate-50">PPT framework</div>
+        <div className="mt-3 grid grid-cols-3 divide-x divide-slate-200/80 rounded-lg border border-slate-200/80 bg-white/70 text-center dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900/45">
           {[
-            ["1", "Scope", wizardStep >= 1],
-            ["2", "Outline", wizardStep >= 2],
-            ["3", "Build", wizardStep >= 3]
-          ].map(([n, label, active]) => (
-            <div
-              key={label}
-              className={[
-                "rounded-xl border px-2 py-2 text-center",
-                active
-                  ? "border-violet-300/70 bg-white/70 dark:border-violet-400/40 dark:bg-violet-950/25"
-                  : "border-slate-200/60 bg-white/40 opacity-65 dark:border-slate-700/60 dark:bg-slate-900/25"
-              ].join(" ")}
-            >
-              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{n}</div>
-              <div className="mt-1 text-[11px] font-medium text-slate-900 dark:text-slate-100">{label}</div>
+            ["Branches", selectedList.length],
+            ["Nodes", subGraph.nodes.length],
+            ["Sources", sourceFiles.length]
+          ].map(([label, value]) => (
+            <div key={label} className="px-2 py-2">
+              <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{value}</div>
+              <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{label}</div>
             </div>
           ))}
-        </div>
-      </div>
-
-      <section className="rounded-xl border border-slate-200/80 bg-white/65 p-3 dark:border-slate-700/70 dark:bg-slate-900/35">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
-            1
-          </span>
-          <div>
-            <div className="text-xs font-semibold text-slate-900 dark:text-slate-50">Choose content</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">Use the export scope above to define what enters the deck.</div>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-1.5 text-center">
-          <div className="rounded-lg border border-slate-200/70 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
-            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{selectedList.length}</div>
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">branches</div>
-          </div>
-          <div className="rounded-lg border border-slate-200/70 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
-            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{subGraph.nodes.length}</div>
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">nodes</div>
-          </div>
-          <div className="rounded-lg border border-slate-200/70 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950/45">
-            <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{sourceFiles.length}</div>
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">sources</div>
-          </div>
         </div>
         {selectedList.length === 0 ? (
           <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{t("export_err_select")}</p>
         ) : null}
-      </section>
+      </div>
 
-      <section className="rounded-xl border border-slate-200/80 bg-white/65 p-3 dark:border-slate-700/70 dark:bg-slate-900/35">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
-            2
-          </span>
-          <div>
-            <div className="text-xs font-semibold text-slate-900 dark:text-slate-50">Create outline</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">Fill only the essentials, then generate the slide outline.</div>
-          </div>
+      <section className="space-y-3">
+        <div>
+          <div className="text-xs font-semibold text-slate-900 dark:text-slate-50">Create outline</div>
+          <div className="mt-1 h-px bg-slate-200/80 dark:bg-slate-700/70" />
         </div>
         <PptFrameworkBriefSection
           intent={intent}
@@ -452,37 +408,16 @@ export default function PptFrameworkExportPanel(props: Props) {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 dark:border-slate-700/70 dark:bg-slate-900/35">
-        <div className="mb-4 flex items-start gap-3">
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[12px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
-            3
-          </span>
-          <div>
-            <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">Review & build</div>
-            <div className="mt-1 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-              {outlineReady
-                ? `${slides.length} slides ready. Reorder, refine, and then launch the deck build.`
-                : "Generate an outline first."}
-            </div>
-          </div>
+      <section className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-slate-700/70">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-slate-900 dark:text-slate-50">Review and build</div>
+          {outlineReady ? (
+            <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{slides.length} slides</div>
+          ) : null}
         </div>
 
         {outlineReady ? (
           <>
-            <div className="mb-4 grid gap-2 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
-                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Slides</div>
-                <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">{slides.length}</div>
-              </div>
-              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
-                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Review mode</div>
-                <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Summary first</div>
-              </div>
-              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
-                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Next step</div>
-                <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Build deck</div>
-              </div>
-            </div>
             <PptFrameworkDeckSection
               slides={slides}
               copyPromptFeedback={copyPromptFeedback}
@@ -500,15 +435,15 @@ export default function PptFrameworkExportPanel(props: Props) {
             </div>
           </>
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-[13px] leading-relaxed text-slate-500 dark:border-slate-600 dark:text-slate-400">
-            Your generated outline will appear here as a reviewable slide list, followed by a separate build launcher.
+          <div className="rounded-lg border border-dashed border-slate-300 px-4 py-5 text-center text-[12px] text-slate-500 dark:border-slate-600 dark:text-slate-400">
+            Generate an outline to review slides and start the deck build.
           </div>
         )}
       </section>
 
-      <details className="rounded-xl border border-slate-200/80 bg-white/50 p-3 dark:border-slate-700/70 dark:bg-slate-900/30">
+      <details className="rounded-lg border border-slate-200/80 bg-white/50 p-3 dark:border-slate-700/70 dark:bg-slate-900/30">
         <summary className="cursor-pointer select-none text-xs font-semibold text-slate-700 dark:text-slate-200">
-          Advanced options
+          Options
         </summary>
         <div className="mt-3 space-y-4 border-t border-slate-200/70 pt-3 dark:border-slate-700/70">
           <div>

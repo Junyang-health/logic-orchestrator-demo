@@ -202,3 +202,24 @@ export function slideBuildDownloadPdfUrl(base: string, sessionId: string): strin
   const root = base.replace(/\/$/, "");
   return `${root}/slide-build/sessions/${encodeURIComponent(sessionId)}/files/pdf`;
 }
+
+export async function postSlideBuildPptxPreviewImages(
+  base: string,
+  sessionId: string,
+  images: string[]
+): Promise<void> {
+  const res = await fetch(
+    `${base}/slide-build/sessions/${encodeURIComponent(sessionId)}/files/pptx-from-preview-images`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images })
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as { detail?: unknown };
+  if (!res.ok) {
+    const d = data.detail;
+    const msg = typeof d === "string" ? d : `Request failed (${res.status})`;
+    throw new HttpError(msg, res.status, data);
+  }
+}

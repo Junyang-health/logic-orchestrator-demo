@@ -95,7 +95,7 @@ export default function SlideDeckFilmstrip(props: Props) {
   );
 
   return (
-    <div className="mx-auto flex max-w-[88rem] gap-3 overflow-x-auto pb-1" onDragOver={onStripDragOver}>
+    <div className="mx-auto flex max-w-[88rem] gap-2 overflow-x-auto pb-1" onDragOver={onStripDragOver}>
       {slides.map((s, i) => {
         const previewSrc =
           sessionId && s.id ? slideBuildPreviewUrl(backendBase.replace(/\/$/, ""), sessionId, s.id) : "";
@@ -103,7 +103,7 @@ export default function SlideDeckFilmstrip(props: Props) {
           <div
             key={s.id}
             className={[
-              "group relative flex w-[11.5rem] shrink-0 flex-col gap-2 rounded-2xl border p-2 transition",
+              "group relative flex w-[8.75rem] shrink-0 flex-col gap-1.5 rounded-xl border p-1.5 transition",
               i === activeIndex
                 ? "border-violet-500/80 bg-violet-500/12 shadow-[0_0_0_1px_rgba(139,92,246,0.25)]"
                 : "border-slate-200/80 bg-white/90 hover:border-slate-300 dark:border-slate-700/80 dark:bg-slate-900/80 dark:hover:border-slate-600",
@@ -119,8 +119,8 @@ export default function SlideDeckFilmstrip(props: Props) {
                 onClick={() => onSelectIndex(i)}
                 className="min-w-0 text-left"
               >
-                <div className="text-[11px] font-semibold text-slate-900 dark:text-slate-50">#{i + 1}</div>
-                <div className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-tight text-slate-700 dark:text-slate-200">
+                <div className="text-[10px] font-semibold text-slate-900 dark:text-slate-50">#{i + 1}</div>
+                <div className="mt-0.5 line-clamp-1 text-[11px] font-medium leading-tight text-slate-700 dark:text-slate-200">
                   {s.title || "Untitled slide"}
                 </div>
               </button>
@@ -178,9 +178,9 @@ export default function SlideDeckFilmstrip(props: Props) {
               type="button"
               disabled={disabled}
               onClick={() => onSelectIndex(i)}
-              className="block rounded-xl text-left outline-none ring-offset-2 ring-offset-[var(--mm-bg-app)] focus-visible:ring-2 focus-visible:ring-violet-500"
+              className="block rounded-lg text-left outline-none ring-offset-2 ring-offset-[var(--mm-bg-app)] focus-visible:ring-2 focus-visible:ring-violet-500"
             >
-              <div className="relative overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+              <div className="relative overflow-hidden rounded-lg border border-slate-200/80 bg-slate-100 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                 <div style={{ aspectRatio: "16 / 9" }} className="relative w-full overflow-hidden">
                   {previewSrc ? (
                     <iframe

@@ -84,6 +84,19 @@ _PPTX_SPEC_DOC = """Parallel object `pptx_spec` drives editable exports (Python-
 
 Do not contradict slide_inner_html messaging; pptx_export focuses on typography + structure patrons edit in PowerPoint."""
 
+_PPTX_SCENE_DOC = """Optional object `pptx_scene` is the high-fidelity editable export contract. Use it when the slide has cards, SVG-like diagrams, image slots, precise shapes, or layout-sensitive text:
+- canvas: { "width": 1600, "height": 900 }
+- background: "#0f172a"
+- elements: ordered array. Every object uses absolute 1600x900 coordinates.
+  • text: { "type":"text", "x":120, "y":90, "w":900, "h":70, "text":"...", "fontSize":42, "color":"#f8fafc", "bold":true, "align":"left" }
+  • rect / round_rect / ellipse: { "type":"round_rect", "x":120, "y":260, "w":360, "h":420, "fill":"#1e293b", "stroke":"#475569", "strokeWidth":1.5, "radius":24 }
+  • line: { "type":"line", "x1":100, "y1":500, "x2":1500, "y2":500, "stroke":"#94a3b8", "strokeWidth":2 }
+  • table: { "type":"table", "x":80, "y":180, "w":1440, "h":520, "headers":["..."], "rows":[["..."]], "fontSize":16 }
+  • image: { "type":"image", "x":900, "y":180, "w":520, "h":360, "src":"local file path or data:image/png;base64,...", "fit":"cover" }
+  • svg: { "type":"svg", "x":900, "y":180, "w":520, "h":360, "svg":"<svg width='520' height='360'>...</svg>" }
+- For SVG, prefer simple primitives: rect, circle, ellipse, line, text, and simple M/L/Z paths. Avoid filters, masks, CSS animations, foreignObject, and complex cubic paths if editability matters.
+- Keep scene text concise and match the visible HTML wording. Scene coordinates are the source of truth for PPTX sizing and alignment."""
+
 _SLIDE_HTML_SYSTEM = """You are building ONE slide for a PPT-master-based editable slide preview.
 
 Return JSON only (no markdown). Escape quotes and newlines inside strings.
@@ -92,10 +105,13 @@ Target schema:
 {
   "slide_inner_html": "string — semantic HTML fragment only, no <html> wrapper. Prefer: <h1> action title</h1>, <p class='sub'> subtitle</p>, <div class='body'> key narrative (short bullets <ul><li>…)</div>, <div class='visual'> schematic charts/tables/layout as REAL HTML/CSS (no bitmaps).</div>",
   "speaker_notes": "string — optional one short paragraph for the presenter",
-  "pptx_spec": { OBJECT — see parallel PowerPoint brief above }
+  "pptx_spec": { OBJECT — see parallel PowerPoint brief above },
+  "pptx_scene": { OBJECT — see scene contract below; include for layout-sensitive slides }
 }
 
 """ + _PPTX_SPEC_DOC + """
+
+""" + _PPTX_SCENE_DOC + """
 
 Image placeholders vs rendered diagrams:
 - If the storyline or slide JSON \"visual\"/\"main\" calls for illustrative/photographic/brand imagery OR an infographic that clearly should be raster/vector artwork (photos, cinematic scenes, illustrative hero art), emit a deterministic placeholder wrapper:
@@ -108,10 +124,14 @@ Image placeholders vs rendered diagrams:
 - If the visual requirement is analytic (waterfall / bridge / comparison table / quadrant / KPI strip), IMPLEMENT IT with semantic HTML/CSS + ASCII mini labels inside `.visual`; use placeholders ONLY when wording clearly asks for illustrative/photo/marketing visuals.
 
 Overall constraints:
+- Adhere strictly to a 16:9 layout. The preview HTML, `pptx_spec`, and `pptx_scene` must all fit the same 1600×900 / 16:9 canvas without relying on scroll, clipping, or off-canvas content.
 - Fill the full 16:9 slide frame. Do not create a small centered card inside the slide; the root content should use the available page.
 - Fit mentally in a 1280×720 slide; concise, high signal.
+- Stick to the PPT-master color system implied by deck_style / visual_style / design notes. Use the proposed palette consistently for background, card fills, accents, positive/negative states, and muted text; do not introduce random one-off colors.
+- Anchor the eye and show information structure with a clear exhibit: hero metric, process infographic, bar vs. line chart choice, 2×2, before/after table, heatmap, waterfall, comparison board, or similar. Use graphics to create contrast and hierarchy; do not produce a wall of text.
 - Every normal content slide should include a meaningful visual region. Prefer HTML/CSS charts, comparison tables, KPI strips, matrices, process diagrams, waterfalls, quadrants, or heatmaps. Avoid text-only slides unless the slide is explicitly a title/section divider.
 - When the visual region is structured, encode the same structure in `pptx_spec` so editable PPTX export can rebuild it. Prefer comparison boards, process flows, timelines, status boards, and 2x2 matrices over falling back to plain bullets.
+- Before returning the JSON, mentally render the slide and check every element for alignment, spacing, and overlap. If any element unnecessarily overlaps, obstructs viewing, falls outside the 16:9 frame, or creates cramped/unreadable text, regenerate that portion of the layout before answering.
 - If exact numeric data is unavailable, create a qualitative graph/diagram with clearly labeled axes, categories, relative bars, or flow steps; do not invent exact figures.
 - Align with the slide JSON (title, subtitle, main, visual, beat). Do not invent numbers not implied by the text.
 - Honour global style questionnaires / palettes when echoed in augmenting notes unless they contradict factual accuracy.
@@ -196,6 +216,8 @@ def _run_slide_generate(
     notes = str(data.get("speaker_notes") or "")[:8000]
     pptx_raw = data.get("pptx_spec")
     pptx_spec: dict[str, Any] = pptx_raw if isinstance(pptx_raw, dict) else {}
+    scene_raw = data.get("pptx_scene")
+    pptx_scene: dict[str, Any] = scene_raw if isinstance(scene_raw, dict) else {}
     write_manifest_note(
         job.session_id,
         sid,
@@ -205,6 +227,7 @@ def _run_slide_generate(
             "build_engine": build_engine,
             "payload_echo": payload,
             "pptx_spec": pptx_spec,
+            "pptx_scene": pptx_scene,
             "ppt_master": ppt_master_meta,
         },
     )
@@ -235,6 +258,7 @@ def _run_export(
         "download": {
             "pptx": f"/slide-build/sessions/{job.session_id}/files/pptx",
             "pdf": f"/slide-build/sessions/{job.session_id}/files/pdf",
+            "review": f"/slide-build/sessions/{job.session_id}/files/review",
         },
     }
     if kinds == ("pdf",):

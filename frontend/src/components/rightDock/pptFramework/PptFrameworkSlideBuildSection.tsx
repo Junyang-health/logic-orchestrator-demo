@@ -79,58 +79,26 @@ export default function PptFrameworkSlideBuildSection(props: Props) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <div className="rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50 via-white to-slate-50 p-4 shadow-sm dark:border-violet-500/25 dark:from-violet-950/30 dark:via-slate-900/60 dark:to-slate-950/45">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-lg border border-slate-200/80 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/45">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-200">
-            Build deck
-          </div>
-          <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">{t("ppt_builder_title")}</div>
-          <p className="mt-1 max-w-[26rem] text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">
-            Lock the outline, then open the Slide deck workspace to generate visuals and page layouts slide by slide.
-          </p>
-        </div>
-        <div className="rounded-full border border-violet-200 bg-white/80 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/35 dark:text-violet-200">
-          {slides.length} ready
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-slate-200/80 bg-white/85 p-3 dark:border-slate-700 dark:bg-slate-900/70">
-        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Build engine</div>
-        <div className="mt-2 rounded-xl border border-violet-200 bg-violet-500/8 px-3 py-3 text-[12px] dark:border-violet-500/30 dark:bg-violet-950/30">
-          <div className="font-semibold text-violet-700 dark:text-violet-200">PPT-master</div>
-          <div className="mt-1 leading-relaxed text-slate-600 dark:text-slate-400">
-            Framework planning, slide generation, and editable export now stay on one PPT-master workflow.
+          <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">Build deck</div>
+          <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            {slides.length} slides / {styleLabel}
           </div>
         </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-200/80 bg-white/85 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Slides</div>
-          <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">{slides.length}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200/80 bg-white/85 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Style</div>
-          <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">{styleLabel}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200/80 bg-white/85 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Destination</div>
-          <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Slide deck</div>
-        </div>
-        <div className="rounded-xl border border-slate-200/80 bg-white/85 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70 sm:col-span-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Engine</div>
-          <div className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">PPT-master</div>
+        <div className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300">
+          PPT-master
         </div>
       </div>
 
       <button
         type="button"
-        className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-3 text-[13px] font-semibold text-white shadow-sm disabled:opacity-40 dark:bg-violet-500"
+        className="mt-3 w-full rounded-lg bg-slate-950 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
         disabled={busy || slides.length === 0}
         onClick={() => void startDeckBuild()}
       >
-        {busy ? t("ppt_builder_starting") : "Open Slide deck with PPT-master"}
+        {busy ? t("ppt_builder_starting") : "Open slide deck"}
       </button>
 
       {activeSession ? (
@@ -140,12 +108,10 @@ export default function PptFrameworkSlideBuildSection(props: Props) {
       ) : null}
 
       {err ? (
-        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-100">
           {err}
         </div>
       ) : null}
-
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">{t("ppt_builder_worker_hint")}</p>
     </div>
   );
 }

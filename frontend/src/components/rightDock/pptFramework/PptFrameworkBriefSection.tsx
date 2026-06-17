@@ -37,29 +37,32 @@ export default function PptFrameworkBriefSection(props: Props) {
   } = props;
 
   return (
-    <div>
-      <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{t("ppt_brief")}</div>
-      <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {t("ppt_intent")}
-      </label>
-      <textarea
-        className="ios-field mb-2 min-h-[56px] w-full py-1.5 text-xs"
-        value={intent}
-        onChange={(e) => onIntent(e.target.value)}
-        placeholder={t("ppt_intent_ph")}
-      />
-      <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {t("ppt_audience")}
-      </label>
-      <input
-        className="ios-field mb-2 w-full text-xs"
-        value={audience}
-        onChange={(e) => onAudience(e.target.value)}
-        placeholder={t("ppt_audience_ph")}
-      />
-      <div className="mb-2 flex flex-wrap gap-2">
+    <div className="space-y-3">
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+          {t("ppt_intent")}
+        </label>
+        <textarea
+          className="ios-field min-h-[64px] w-full py-2 text-xs"
+          value={intent}
+          onChange={(e) => onIntent(e.target.value)}
+          placeholder={t("ppt_intent_ph")}
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+          {t("ppt_audience")}
+        </label>
+        <input
+          className="ios-field w-full text-xs"
+          value={audience}
+          onChange={(e) => onAudience(e.target.value)}
+          placeholder={t("ppt_audience_ph")}
+        />
+      </div>
+      <div className="flex flex-wrap gap-2">
         <div className="min-w-0 flex-1">
-          <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">
             {t("ppt_pages")}
           </label>
           <input
@@ -73,7 +76,7 @@ export default function PptFrameworkBriefSection(props: Props) {
         </div>
         {showAdvanced ? (
           <div className="w-full min-w-[6.5rem] sm:w-28">
-            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">
               {t("ppt_enrich_batch")}
             </label>
             <input
@@ -91,21 +94,20 @@ export default function PptFrameworkBriefSection(props: Props) {
       {showAdvanced ? (
         <p className="mb-2 text-[9px] leading-snug text-slate-500 dark:text-slate-400">{t("ppt_enrich_batch_help")}</p>
       ) : null}
-      <div className="mb-2">
-        <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">
           {t("ppt_deck_style_label")}
         </label>
-        <p className="mb-1.5 text-[9px] leading-snug text-slate-500 dark:text-slate-400">{t("ppt_deck_style_help")}</p>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {PPT_DECK_STYLE_ROWS.map((r) => (
             <button
               key={r.id}
               type="button"
               className={[
-                "rounded-lg border px-2 py-1.5 text-left text-[11px] font-medium leading-snug transition",
+                "rounded-lg border px-2.5 py-2 text-left text-[11px] font-medium leading-snug transition",
                 deckStyle === r.id
-                  ? "border-violet-300/80 bg-violet-50/90 text-stone-900 dark:border-violet-500/50 dark:bg-violet-950/40 dark:text-stone-50"
-                  : "border-rose-100/50 bg-stone-50/70 text-stone-700 hover:bg-white/90 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-200"
+                  ? "border-slate-900 bg-slate-950 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-950"
+                  : "border-slate-200/80 bg-white/70 text-slate-700 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:border-slate-500"
               ].join(" ")}
               onClick={() => onDeckStyle(r.id)}
             >
@@ -114,15 +116,17 @@ export default function PptFrameworkBriefSection(props: Props) {
           ))}
         </div>
       </div>
-      <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {t("ppt_style")}
-      </label>
-      <textarea
-        className="ios-field min-h-[48px] w-full py-1.5 text-xs"
-        value={style}
-        onChange={(e) => onStyle(e.target.value)}
-        placeholder={t("ppt_style_ph")}
-      />
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+          {t("ppt_style")}
+        </label>
+        <textarea
+          className="ios-field min-h-[56px] w-full py-2 text-xs"
+          value={style}
+          onChange={(e) => onStyle(e.target.value)}
+          placeholder={t("ppt_style_ph")}
+        />
+      </div>
     </div>
   );
 }

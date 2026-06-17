@@ -13,5 +13,5 @@ pypdf==5.6.0
 json-repair==0.30.0
 python-pptx==1.0.2
 reportlab==4.4.3
+playwright==1.49.1
 markitdown[pdf,docx,pptx,xlsx]>=0.1.0
-

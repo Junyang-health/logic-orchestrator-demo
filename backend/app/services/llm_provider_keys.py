@@ -65,12 +65,12 @@ def default_model_from_env() -> str:
     Default registry / active model when nothing is persisted.
 
     Order:
-    - BASE_MODEL or GEMINI_MODEL if set (explicit id, may be any family)
+    - BASE_MODEL if set (explicit id, may be any family)
     - PRIMARY_LLM / PRIMARY_LLM_PROVIDER picks among keys that exist
-    - auto: first available gemini, then deepseek, then kimi/moonshot
-    - last resort: gemini-2.5-flash (calls will fail until a key is set)
+    - auto: first available deepseek, then kimi/moonshot, then gemini
+    - last resort: deepseek:deepseek-chat (calls will fail until a key is set)
     """
-    explicit = (os.getenv("BASE_MODEL") or os.getenv("GEMINI_MODEL") or "").strip()
+    explicit = (os.getenv("BASE_MODEL") or "").strip()
     if explicit:
         return explicit
 
@@ -87,13 +87,13 @@ def default_model_from_env() -> str:
         if m:
             return _default_kimi_prefixed()
 
-    if g:
-        return _default_gemini_id()
     if d:
         return "deepseek:deepseek-chat"
     if m:
         return _default_kimi_prefixed()
-    return "gemini-2.5-flash"
+    if g:
+        return _default_gemini_id()
+    return "deepseek:deepseek-chat"
 
 
 def _pick_fallback_when_gemini_missing() -> str:
@@ -130,21 +130,23 @@ def resolve_chat_model_id(model_id: str) -> str:
         return _pick_fallback_when_gemini_missing()
 
     if looks_like_deepseek_model(mid) and not d:
-        if g:
-            return _default_gemini_id()
         if m:
             return _default_kimi_prefixed()
+        if _primary_llm_preference() in ("gemini", "google") and g:
+            return _default_gemini_id()
         raise RuntimeError(
-            "Missing DEEPSEEK_API_KEY. Configure GEMINI_API_KEY, MOONSHOT_API_KEY (Kimi), or switch the active model."
+            "Missing DEEPSEEK_API_KEY. Configure DEEPSEEK_API_KEY, MOONSHOT_API_KEY (Kimi), "
+            "or explicitly set PRIMARY_LLM=gemini to use Gemini."
         )
 
     if looks_like_kimi_model(mid) and not m:
-        if g:
-            return _default_gemini_id()
         if d:
             return "deepseek:deepseek-chat"
+        if _primary_llm_preference() in ("gemini", "google") and g:
+            return _default_gemini_id()
         raise RuntimeError(
-            "Missing MOONSHOT_API_KEY (or KIMI_API_KEY). Configure GEMINI_API_KEY, DEEPSEEK_API_KEY, or switch the active model."
+            "Missing MOONSHOT_API_KEY (or KIMI_API_KEY). Configure DEEPSEEK_API_KEY, "
+            "or explicitly set PRIMARY_LLM=gemini to use Gemini."
         )
 
     return mid

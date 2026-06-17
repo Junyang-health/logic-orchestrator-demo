@@ -38,8 +38,6 @@ export default function PptFrameworkSkillsSection(props: Props) {
   return (
     <div>
       <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{t("ppt_skills")}</div>
-      <p className="mb-2 text-[10px] text-slate-500 dark:text-slate-400">{t("ppt_skills_hint")}</p>
-      <p className="mb-2 text-[9px] leading-snug text-slate-500 dark:text-slate-500">{t("ppt_skills_persisted")}</p>
       <div className="mb-2 flex flex-wrap gap-2">
         <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200/80 bg-white/80 px-2 py-1 text-[11px] dark:border-slate-600 dark:bg-slate-900/60">
           <input type="checkbox" checked={skills.webSearch} onChange={() => toggleSkill("webSearch" as SkillKey)} />
@@ -62,7 +60,7 @@ export default function PptFrameworkSkillsSection(props: Props) {
           placeholder={t("ppt_web_q_ph")}
         />
       ) : null}
-      <div className="mb-2 rounded-md border border-slate-200/80 bg-white/70 p-2 dark:border-slate-600 dark:bg-slate-900/50">
+      <div className="mb-2 rounded-lg border border-slate-200/80 bg-white/70 p-2 dark:border-slate-600 dark:bg-slate-900/50">
         <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
           <Link2 className="h-3 w-3" />
           {t("ppt_gh_skill")}
@@ -92,7 +90,7 @@ export default function PptFrameworkSkillsSection(props: Props) {
           {customSkills.map((s) => (
             <li
               key={s.id}
-              className="rounded-md border border-slate-200/60 bg-slate-50/80 p-2 dark:border-slate-600 dark:bg-slate-800/50"
+              className="rounded-lg border border-slate-200/60 bg-slate-50/80 p-2 dark:border-slate-600 dark:bg-slate-800/50"
             >
               <div className="mb-1 flex items-center justify-between gap-1">
                 <input

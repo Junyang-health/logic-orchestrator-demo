@@ -4,6 +4,7 @@ Slide-build sessions & async jobs (queue consumed by ``python -m worker``).
 
 from __future__ import annotations
 
+import base64
 from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -13,10 +14,13 @@ from pydantic import BaseModel, Field
 from app.services.slide_build_artifacts import (
     export_pdf_path,
     export_pptx_path,
+    export_dir,
     ensure_session_dirs,
     read_slide_document,
     write_slide_document,
 )
+from app.services.slide_build_export import build_pptx_from_png_paths
+from app.services.slide_export_review import export_review_path
 from app.services.slide_build_slide_edit import apply_slide_instruction, extract_slide_inner_fragment
 from app.services.slide_build_session_prefs import (
     list_reference_basenames,
@@ -107,6 +111,13 @@ class SlideBuildPrefsIn(BaseModel):
 
 class ReferenceStoredOut(BaseModel):
     stored_names: list[str]
+
+
+class PptxPreviewImagesIn(BaseModel):
+    images: list[str] = Field(
+        default_factory=list,
+        description="Ordered PNG images as base64 strings or data:image/png;base64 URLs.",
+    )
 
 
 def _prefs_merge(session_id: str, body: SlideBuildPrefsIn) -> dict[str, Any]:
@@ -327,6 +338,35 @@ def download_deck_pptx(session_id: str) -> FileResponse:
     )
 
 
+@router.post("/sessions/{session_id}/files/pptx-from-preview-images")
+def write_deck_pptx_from_preview_images(session_id: str, body: PptxPreviewImagesIn) -> dict[str, Literal[True]]:
+    if not get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not body.images:
+        raise HTTPException(status_code=400, detail="No preview images supplied")
+
+    ensure_session_dirs(session_id)
+    img_dir = export_dir(session_id) / "client_preview_renders"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for idx, raw in enumerate(body.images, start=1):
+        s = (raw or "").strip()
+        if "," in s and s.lower().startswith("data:"):
+            s = s.split(",", 1)[1]
+        try:
+            data = base64.b64decode(s, validate=True)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid PNG data for slide {idx}") from e
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise HTTPException(status_code=400, detail=f"Slide {idx} is not a PNG image")
+        p = img_dir / f"slide_{idx:03d}.png"
+        p.write_bytes(data)
+        paths.append(p)
+
+    build_pptx_from_png_paths(paths, export_pptx_path(session_id))
+    return {"ok": True}
+
+
 @router.get("/sessions/{session_id}/files/pdf")
 def download_deck_pdf(session_id: str) -> FileResponse:
     if not get_session(session_id):
@@ -338,3 +378,16 @@ def download_deck_pdf(session_id: str) -> FileResponse:
             detail="PDF not found — enqueue an export_pdf job and wait for the worker.",
         )
     return FileResponse(path, filename="deck.pdf", media_type="application/pdf")
+
+
+@router.get("/sessions/{session_id}/files/review")
+def download_export_review(session_id: str) -> FileResponse:
+    if not get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    path = export_review_path(session_id)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Export review not found — enqueue an export job and wait for the worker.",
+        )
+    return FileResponse(path, filename="export_review.json", media_type="application/json")

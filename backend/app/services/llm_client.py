@@ -121,12 +121,44 @@ def _is_transient_gemini_overload(err: Exception) -> bool:
     # - "503 UNAVAILABLE"
     # - status="UNAVAILABLE"
     # - "high demand"
-    return ("503" in msg_u and "UNAVAILABLE" in msg_u) or ("HIGH DEMAND" in msg_u) or ("STATUS': 'UNAVAILABLE" in msg_u)
+    return (
+        ("503" in msg_u and "UNAVAILABLE" in msg_u)
+        or ("HIGH DEMAND" in msg_u)
+        or ("STATUS': 'UNAVAILABLE" in msg_u)
+        or _is_transient_network_error(err)
+    )
 
 
 def _is_transient_http_error(err: Exception) -> bool:
     msg = str(err or "").upper()
-    return any(code in msg for code in ["429", "500", "502", "503", "504", "TIMEOUT", "TIMED OUT"])
+    return any(
+        code in msg for code in ["429", "500", "502", "503", "504", "TIMEOUT", "TIMED OUT"]
+    ) or _is_transient_network_error(err)
+
+
+def _is_transient_network_error(err: Exception) -> bool:
+    msg = str(err or "").upper()
+    return isinstance(err, httpx.TransportError) or any(
+        marker in msg
+        for marker in [
+            "UNEXPECTED_EOF_WHILE_READING",
+            "EOF OCCURRED IN VIOLATION OF PROTOCOL",
+            "SSL",
+            "TLS",
+            "CONNECTION RESET",
+            "CONNECTION ABORTED",
+            "REMOTE PROTOCOL ERROR",
+            "SERVER DISCONNECTED",
+            "NETWORK IS UNREACHABLE",
+            "NODENAME NOR SERVNAME",
+            "NAME OR SERVICE NOT KNOWN",
+            "TEMPORARY FAILURE IN NAME RESOLUTION",
+            "GETADDRINFO",
+            "DNS",
+            "CONNECTERROR",
+            "READERROR",
+        ]
+    )
 
 
 @dataclass(frozen=True)
@@ -140,7 +172,8 @@ class LlmClient:
     Provider-agnostic LLM client (Gemini, DeepSeek, Kimi/Moonshot).
 
     Routing uses API keys in the environment: configure the key for the provider you use.
-    With multiple keys, optional PRIMARY_LLM=gemini|deepseek|kimi biases fallbacks and defaults.
+    DeepSeek is the default text provider. Gemini is used only when explicitly selected
+    or for image/vision tasks that require a vision-capable provider.
     Anthropic is not wired through this client for JSON/chat.
     """
 
@@ -367,10 +400,9 @@ class LlmClient:
                         continue
                     break
 
-            # If DeepSeek is temporarily unavailable, fall back to Gemini or Kimi.
-            if last_err and _is_transient_http_error(last_err) and gemini_key_present():
-                model_id = _normalize_gemini_model(os.getenv("GEMINI_MODEL") or "gemini-2.5-flash")
-            elif last_err and _is_transient_http_error(last_err) and moonshot_key_present():
+            # If DeepSeek is temporarily unavailable, fall back only to Kimi.
+            # Do not route text generation to Gemini unless the active model is Gemini.
+            if last_err and _is_transient_http_error(last_err) and moonshot_key_present():
                 text = self._moonshot_chat_completion(
                     model=_normalize_kimi_model(os.getenv("MOONSHOT_DEFAULT_MODEL") or "kimi-k2.5"),
                     system=system.strip(),
@@ -404,10 +436,7 @@ class LlmClient:
                         continue
                     break
 
-            if last_err and _is_transient_http_error(last_err) and gemini_key_present():
-                model_id = _normalize_gemini_model(os.getenv("GEMINI_MODEL") or "gemini-2.5-flash")
-            else:
-                raise RuntimeError(str(last_err) if last_err else "Moonshot (Kimi) request failed")
+            raise RuntimeError(str(last_err) if last_err else "Moonshot (Kimi) request failed")
 
         if looks_like_gemini_model(model_id) and self._gemini_api_key():
             client = self._get_gemini()
@@ -474,4 +503,3 @@ class LlmClient:
         raise RuntimeError(
             "No supported LLM provider available. Configure GEMINI_API_KEY, DEEPSEEK_API_KEY, or MOONSHOT_API_KEY (Kimi)."
         )
-

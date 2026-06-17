@@ -30,13 +30,27 @@ type Props = {
   backendBase: string;
 };
 
-function latestJobCompleted(snap: SlideBuildSessionOut | null, kind: string): SlideBuildJobOut | null {
-  const jobs = snap?.jobs ?? [];
-  for (let i = jobs.length - 1; i >= 0; i--) {
-    const j = jobs[i]!;
-    if (j.kind === kind && j.status === "completed") return j;
-  }
-  return null;
+async function delay(ms: number) {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+function findJob(snap: SlideBuildSessionOut, jobId: string): SlideBuildJobOut | null {
+  return snap.jobs.find((j) => j.id === jobId) ?? null;
+}
+
+async function downloadDeckFile(url: string, filename: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 export default function SlideDeckCenterWorkspace(props: Props) {
@@ -77,6 +91,8 @@ export default function SlideDeckCenterWorkspace(props: Props) {
   const [previewTick, setPreviewTick] = useState(0);
   const [previewScale, setPreviewScale] = useState(1);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
+  const [exportErr, setExportErr] = useState("");
+  const [exportReviewMsg, setExportReviewMsg] = useState("");
   const [stripBusy, setStripBusy] = useState(false);
   const [stripErr, setStripErr] = useState("");
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -404,12 +420,40 @@ export default function SlideDeckCenterWorkspace(props: Props) {
 
   const exportDeck = async (kind: "export_pptx" | "export_pdf") => {
     if (!slideBuildSessionId) return;
+    const filename = kind === "export_pptx" ? "deck.pptx" : "deck.pdf";
+    const downloadUrl =
+      kind === "export_pptx"
+        ? slideBuildDownloadPptxUrl(base, slideBuildSessionId)
+        : slideBuildDownloadPdfUrl(base, slideBuildSessionId);
     setExportBusy(kind);
+    setExportErr("");
+    setExportReviewMsg("");
     try {
-      await enqueueSlideJob(backendBase, slideBuildSessionId, { kind, payload: {} });
-      await getSlideBuildSession(backendBase, slideBuildSessionId).then(setSessionSnap).catch(() => {});
-    } catch {
-      /* ignore */
+      const queued = await enqueueSlideJob(backendBase, slideBuildSessionId, { kind, payload: {} });
+      const deadline = Date.now() + 5 * 60 * 1000;
+      for (;;) {
+        const snap = await getSlideBuildSession(backendBase, slideBuildSessionId);
+        applySessionToDeckState(snap);
+        const job = findJob(snap, queued.id);
+        if (job?.status === "completed") {
+          const paths = job.result && typeof job.result === "object" ? (job.result.paths as Record<string, unknown> | undefined) : undefined;
+          const reviewStatus = typeof paths?.review_status === "string" ? paths.review_status : "";
+          if (reviewStatus && reviewStatus !== "pass") {
+            setExportReviewMsg(`Export review: ${reviewStatus}. Check export_review.json for details.`);
+          }
+          await downloadDeckFile(downloadUrl, filename);
+          return;
+        }
+        if (job?.status === "failed") {
+          throw new Error(job.error || "Export failed");
+        }
+        if (Date.now() > deadline) {
+          throw new Error("Export is still running. Please try again in a moment.");
+        }
+        await delay(900);
+      }
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : String(e));
     } finally {
       setExportBusy(null);
     }
@@ -452,136 +496,109 @@ export default function SlideDeckCenterWorkspace(props: Props) {
           onSubmit={handleWizardSubmit}
         />
 
-        <div className="border-b border-[var(--mm-border-subtle)] px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="border-b border-[var(--mm-border-subtle)] px-4 py-3">
+          <div className="flex min-w-0 items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                Slide deck
-              </div>
-              <div className="mt-1 truncate text-[22px] font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-                {deckSlide?.title || "—"}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-500 dark:text-slate-400">
-                <span>{t("slide_deck_counter", { current: Math.min(deckViewerIndex, n - 1) + 1, total: n })}</span>
-                <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:border-violet-500/35 dark:bg-violet-950/35 dark:text-violet-200">
-                  PPT-master
+              <div className="flex min-w-0 items-center gap-2 text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                <span className="shrink-0">
+                  {t("slide_deck_counter", { current: Math.min(deckViewerIndex, n - 1) + 1, total: n })}
                 </span>
-                {deckSlide?.subtitle ? <span className="truncate">{deckSlide.subtitle}</span> : null}
                 {selectedSectionHtml.trim() ? (
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:border-sky-500/35 dark:bg-sky-950/35 dark:text-sky-200">
+                  <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:border-sky-500/35 dark:bg-sky-950/35 dark:text-sky-200">
                     Section selected
                   </span>
                 ) : null}
               </div>
+              <div className="mt-1 flex min-w-0 items-baseline gap-3">
+                <div className="min-w-0 truncate text-[18px] font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                  {deckSlide?.title || "—"}
+                </div>
+                {deckSlide?.subtitle ? (
+                  <div className="hidden min-w-0 max-w-[34rem] truncate text-[13px] text-slate-500 dark:text-slate-400 md:block">
+                    {deckSlide.subtitle}
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
               <button
                 type="button"
-                className="rounded-xl border border-slate-200 px-3 py-2 text-[12px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                 onClick={openExportsPanel}
               >
-                {t("slide_deck_link_exports")}
+                Exports
               </button>
               <button
                 type="button"
                 disabled={!slideBuildSessionId || !!exportBusy}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                 onClick={() => void exportDeck("export_pptx")}
               >
-                {exportBusy === "export_pptx" ? t("ppt_builder_export_pptx") + "…" : t("ppt_builder_export_pptx")}
+                {exportBusy === "export_pptx" ? "PPTX..." : "PPTX"}
               </button>
               <button
                 type="button"
                 disabled={!slideBuildSessionId || !!exportBusy}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                 onClick={() => void exportDeck("export_pdf")}
               >
-                {exportBusy === "export_pdf" ? t("ppt_builder_export_pdf") + "…" : t("ppt_builder_export_pdf")}
+                {exportBusy === "export_pdf" ? "PDF..." : "PDF"}
               </button>
-              {latestJobCompleted(sessionSnap, "export_pptx") ? (
-                <a
-                  href={slideBuildSessionId ? slideBuildDownloadPptxUrl(base, slideBuildSessionId) : "#"}
-                  className="text-[12px] font-semibold text-violet-700 underline dark:text-violet-300"
-                  download
-                >
-                  {t("ppt_builder_download_pptx")}
-                </a>
-              ) : null}
-              {latestJobCompleted(sessionSnap, "export_pdf") ? (
-                <a
-                  href={slideBuildSessionId ? slideBuildDownloadPdfUrl(base, slideBuildSessionId) : "#"}
-                  className="text-[12px] font-semibold text-violet-700 underline dark:text-violet-300"
-                  download
-                >
-                  {t("ppt_builder_download_pdf")}
-                </a>
-              ) : null}
               <div className="ml-1 flex items-center gap-1">
                 <button
                   type="button"
-                  className="rounded-xl border border-slate-200 p-2 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
+                  className="rounded-lg border border-slate-200 p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                   disabled={deckViewerIndex <= 0}
                   onClick={goPrev}
                   aria-label={t("slide_deck_prev")}
                 >
-                  <ChevronLeft className="h-5 w-5" />
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl border border-slate-200 p-2 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
+                  className="rounded-lg border border-slate-200 p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                   disabled={deckViewerIndex >= n - 1}
                   onClick={goNext}
                   aria-label={t("slide_deck_next")}
                 >
-                  <ChevronRight className="h-5 w-5" />
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
           </div>
+          {(exportErr || exportReviewMsg) ? (
+            <div className="mt-2 flex flex-wrap gap-2 text-[12px] font-medium">
+              {exportErr ? <span className="text-rose-600 dark:text-rose-300">{exportErr}</span> : null}
+              {exportReviewMsg ? <span className="text-amber-700 dark:text-amber-300">{exportReviewMsg}</span> : null}
+            </div>
+          ) : null}
         </div>
 
-        {wizardDone ? (
-          <>
-            {(seqBusy || seqProg || seqErr) && (
-              <div
-                className={[
-                  "shrink-0 px-5 py-2.5 text-[12px] font-medium text-white",
-                  seqErr ? "bg-rose-600/95" : "bg-violet-600/90 dark:bg-violet-500"
-                ].join(" ")}
-              >
-                {seqErr
-                  ? seqErr
-                  : seqProg
-                    ? t("slide_deck_generating_progress", {
-                        cur: seqProg.cur,
-                        total: seqProg.total,
-                        pct: seqProg.total > 0 ? Math.round((Math.min(seqProg.cur, seqProg.total) / seqProg.total) * 100) : 0
-                      })
-                    : t("slide_deck_generating_banner")}
-              </div>
-            )}
-
-            <div className="flex min-h-0 flex-wrap items-center gap-2 border-b border-[var(--mm-border-subtle)] px-5 py-2 text-[12px] text-slate-600 dark:text-slate-400">
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">
-                Preview-first editing
-              </span>
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">
-                Live storyboard thumbnails
-              </span>
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">
-                AI section targeting
-              </span>
-            </div>
-          </>
+        {wizardDone && (seqBusy || seqProg || seqErr) ? (
+          <div
+            className={[
+              "shrink-0 px-5 py-2.5 text-[12px] font-medium text-white",
+              seqErr ? "bg-rose-600/95" : "bg-violet-600/90 dark:bg-violet-500"
+            ].join(" ")}
+          >
+            {seqErr
+              ? seqErr
+              : seqProg
+                ? t("slide_deck_generating_progress", {
+                    cur: seqProg.cur,
+                    total: seqProg.total,
+                    pct: seqProg.total > 0 ? Math.round((Math.min(seqProg.cur, seqProg.total) / seqProg.total) * 100) : 0
+                  })
+                : t("slide_deck_generating_banner")}
+          </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-hidden px-5 py-5">
-          <div className="mx-auto flex h-full max-h-full w-full max-w-6xl flex-col">
-            <div className="rounded-[28px] border border-slate-200/80 bg-slate-900/98 p-4 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.85)] dark:border-slate-700">
-              <div
-                className="relative w-full overflow-hidden rounded-[22px] border border-slate-200/10 bg-slate-950"
-                style={{ aspectRatio: "16 / 9" }}
-              >
+        <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
+          <div className="mx-auto flex h-full max-h-full w-full max-w-6xl items-center">
+            <div
+              className="relative w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
+              style={{ aspectRatio: "16 / 9" }}
+            >
               {previewSrc ? (
                 <iframe
                   ref={iframeRef}
@@ -607,38 +624,28 @@ export default function SlideDeckCenterWorkspace(props: Props) {
                   <p className="mt-auto text-[12px] text-slate-500">{t("slide_deck_no_html_hint")}</p>
                 </div>
               )}
-              </div>
             </div>
           </div>
         </div>
 
-        <div className="group/filmstrip shrink-0 border-t border-[var(--mm-border-subtle)] bg-[var(--mm-bg-app)] px-4 py-2">
+        <div className="shrink-0 border-t border-[var(--mm-border-subtle)] bg-[var(--mm-bg-app)] px-4 py-3">
           {stripErr ? (
             <div className="mx-auto mb-3 max-w-6xl rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-500/35 dark:bg-rose-950/40 dark:text-rose-100">
               {stripErr}
             </div>
           ) : null}
           <div className="mx-auto max-w-6xl">
-            <div className="flex items-center justify-center pb-1">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:border-slate-700/80 dark:bg-slate-900/85 dark:text-slate-400">
-                <span className="h-1.5 w-10 rounded-full bg-violet-500/75" />
-                Slide strip
-                <span className="text-[10px] normal-case tracking-normal text-slate-400 dark:text-slate-500">hover to expand</span>
-              </div>
-            </div>
-            <div className="overflow-hidden transition-[max-height,opacity,padding] duration-250 ease-out max-h-0 opacity-70 group-hover/filmstrip:max-h-[18rem] group-hover/filmstrip:pt-2 group-hover/filmstrip:opacity-100 group-focus-within/filmstrip:max-h-[18rem] group-focus-within/filmstrip:pt-2 group-focus-within/filmstrip:opacity-100">
-              <SlideDeckFilmstrip
-                slides={pptSlides}
-                activeIndex={Math.min(deckViewerIndex, Math.max(0, pptSlides.length - 1))}
-                onSelectIndex={setDeckViewerIndex}
-                canMutate={Boolean(slideBuildSessionId)}
-                disabled={stripBusy}
-                onReorder={(next) => void handleFilmstripReorder(next)}
-                onDeleteSlide={(id) => void handleFilmstripDelete(id)}
-                backendBase={backendBase}
-                sessionId={slideBuildSessionId}
-              />
-            </div>
+            <SlideDeckFilmstrip
+              slides={pptSlides}
+              activeIndex={Math.min(deckViewerIndex, Math.max(0, pptSlides.length - 1))}
+              onSelectIndex={setDeckViewerIndex}
+              canMutate={Boolean(slideBuildSessionId)}
+              disabled={stripBusy}
+              onReorder={(next) => void handleFilmstripReorder(next)}
+              onDeleteSlide={(id) => void handleFilmstripDelete(id)}
+              backendBase={backendBase}
+              sessionId={slideBuildSessionId}
+            />
           </div>
         </div>
       </div>
