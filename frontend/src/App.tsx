@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ProjectLandingOverlay from "./components/ProjectLandingOverlay";
 import SessionSetupGate from "./components/SessionSetupGate";
+import AppLeftRail from "./components/AppLeftRail";
 import CanvasWorkspaceToggle from "./components/CanvasWorkspaceToggle";
 import SlideDeckCenterWorkspace from "./components/SlideDeckCenterWorkspace";
 import X6Canvas from "./components/X6Canvas";
@@ -68,7 +69,7 @@ export default function App() {
 
   return (
     <SessionSetupGate backendBase={backendBase}>
-      <div className="relative h-screen w-screen overflow-hidden bg-[var(--mm-bg-app)] text-[var(--mm-text-title)]">
+      <div className="unbox-app-shell relative h-screen w-screen overflow-hidden bg-[var(--mm-bg-app)] text-[var(--mm-text-title)]">
       <ThemeDocumentSync />
       <ProjectLandingOverlay backendBase={backendBase} />
       <ClosedDockRevealTabs />
@@ -86,7 +87,8 @@ export default function App() {
       ) : null}
 
       <div className="flex h-full w-full">
-        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r border-[var(--mm-border-subtle)] bg-[var(--mm-bg-app)]">
+        <AppLeftRail backendBase={backendBase} />
+        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r border-[var(--mm-border-subtle)] bg-transparent">
           <AssistantAndCanvasRow>
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <CanvasWorkspaceToggle />

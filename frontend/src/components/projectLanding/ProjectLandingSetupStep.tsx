@@ -8,7 +8,7 @@ import { classifySourceKind } from "../../types/sourceMaterial";
 import { PREV_PROJECT_SESSION_KEY } from "../sourceMaterial/projectSessionKeys";
 import { SOURCE_FILE_INPUT_ACCEPT } from "../sourceMaterial/sourceFileAccept";
 
-type Project = { id: string; name: string };
+type Project = { id: string; name: string; archived?: boolean };
 
 type StoredLandingFile = { id: string; filename: string; origin?: string; uploaded_at_ms: number };
 
@@ -105,7 +105,7 @@ export function ProjectLandingSetupStep(props: Props) {
           {t("sm_project")}
           <select className="mt-1 ios-select" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
             <option value="">{t("sm_no_project")}</option>
-            {projects.map((p) => (
+            {projects.filter((p) => !p.archived).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} ({p.id})
               </option>

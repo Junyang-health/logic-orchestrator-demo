@@ -39,6 +39,8 @@ class Project:
     id: str
     name: str
     created_at_ms: int
+    archived: bool = False
+    last_active_ms: int = 0
 
 
 def _normalize_origin(raw: Any) -> str:
@@ -126,14 +128,43 @@ def ensure_project(*, name: str, project_id: str | None = None) -> Project:
     if mf.exists():
         try:
             raw = json.loads(mf.read_text(encoding="utf-8"))
-            return Project(id=pid, name=str(raw.get("name") or name), created_at_ms=int(raw.get("created_at_ms") or 0))
+            created = int(raw.get("created_at_ms") or 0)
+            return Project(
+                id=pid,
+                name=str(raw.get("name") or name),
+                created_at_ms=created,
+                archived=bool(raw.get("archived") or False),
+                last_active_ms=_project_last_active_ms(pid, created),
+            )
         except Exception:
             pass
     proj = Project(id=pid, name=(name or pid), created_at_ms=_now_ms())
-    mf.write_text(json.dumps({"id": proj.id, "name": proj.name, "created_at_ms": proj.created_at_ms}, indent=2), encoding="utf-8")
+    mf.write_text(
+        json.dumps(
+            {"id": proj.id, "name": proj.name, "created_at_ms": proj.created_at_ms, "archived": False},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     if not _files_manifest(pid).exists():
         _files_manifest(pid).write_text("[]", encoding="utf-8")
-    return proj
+    return Project(
+        id=proj.id,
+        name=proj.name,
+        created_at_ms=proj.created_at_ms,
+        archived=False,
+        last_active_ms=proj.created_at_ms,
+    )
+
+
+def _project_last_active_ms(project_id: str, created_at_ms: int) -> int:
+    latest = created_at_ms
+    saved = read_saved_mindmap(project_id)
+    if saved is not None:
+        latest = max(latest, int(saved.get("updated_at_ms") or 0))
+    for f in list_files(project_id):
+        latest = max(latest, int(f.uploaded_at_ms or 0), int(f.extracted_at_ms or 0))
+    return latest
 
 
 def list_projects() -> list[Project]:
@@ -154,11 +185,36 @@ def list_projects() -> list[Project]:
                     id=str(raw.get("id") or pid),
                     name=str(raw.get("name") or pid),
                     created_at_ms=int(raw.get("created_at_ms") or 0),
+                    archived=bool(raw.get("archived") or False),
+                    last_active_ms=_project_last_active_ms(pid, int(raw.get("created_at_ms") or 0)),
                 )
             )
         except Exception:
             continue
     return out
+
+
+def set_project_archived(*, project_id: str, archived: bool) -> Project:
+    if not project_exists(project_id):
+        raise FileNotFoundError(project_id)
+    mf = _project_manifest(project_id)
+    raw = json.loads(mf.read_text(encoding="utf-8"))
+    raw["archived"] = bool(archived)
+    if not raw.get("id"):
+        raw["id"] = project_id
+    if not raw.get("name"):
+        raw["name"] = project_id
+    if not raw.get("created_at_ms"):
+        raw["created_at_ms"] = _now_ms()
+    mf.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    created = int(raw.get("created_at_ms") or 0)
+    return Project(
+        id=str(raw.get("id") or project_id),
+        name=str(raw.get("name") or project_id),
+        created_at_ms=created,
+        archived=bool(raw.get("archived") or False),
+        last_active_ms=_project_last_active_ms(project_id, created),
+    )
 
 
 def delete_project(*, project_id: str) -> None:
@@ -408,4 +464,3 @@ def delete_file(*, project_id: str, file_id: str) -> None:
             except OSError:
                 pass
     mf.write_text(json.dumps([_stored_file_to_row(f) for f in kept], indent=2), encoding="utf-8")
-

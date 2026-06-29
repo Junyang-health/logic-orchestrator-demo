@@ -24,7 +24,13 @@ export type LoadMainGraphOptions = {
 
 export type SkillKey = "webSearch" | "financialAnalyst";
 
-export type ProjectRow = { id: string; name: string };
+export type ProjectRow = {
+  id: string;
+  name: string;
+  created_at_ms?: number;
+  archived?: boolean;
+  last_active_ms?: number;
+};
 
 /** Full client UI + graph store shape (single Zustand store). */
 export type UiStore = {
