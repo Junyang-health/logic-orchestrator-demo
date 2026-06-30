@@ -6,10 +6,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.services.llm_client import LlmClient
+from app.services.word_docx_export import DOCX_MIME, build_word_docx_export
 
 router = APIRouter()
 
@@ -154,6 +155,11 @@ class WordFinalMarkdownRequest(BaseModel):
 class WordFinalMarkdownResponse(BaseModel):
     markdown: str
     filename: str = "word-export-report.md"
+
+
+class WordFinalDocxRequest(WordFinalMarkdownRequest):
+    deck_style: str = "consulting_mbb"
+    surface: str = "light"
 
 
 def _mm_digest(nodes: List[WordReportNode], edges: List[WordReportEdge]) -> str:
@@ -615,6 +621,27 @@ The mindmap and corpus are for context in prompts only.
 
     safe = re.sub(r"[^\w\-]+", "-", (req.intent or "report")[:40]).strip("-").lower() or "report"
     return WordFinalMarkdownResponse(markdown=md, filename=f"word-export-{safe}.md")
+
+
+@router.post("/export/word/final-docx")
+def word_final_docx(req: WordFinalDocxRequest) -> Response:
+    if not req.chapters:
+        raise HTTPException(status_code=400, detail="chapters required")
+    export = build_word_docx_export(
+        intent=req.intent,
+        target_audience=req.target_audience,
+        framework_selection=req.framework_selection,
+        chapters=list(req.chapters),
+        include_chapter_writing_prompts=req.include_chapter_writing_prompts,
+        include_visual_ideas=req.include_visual_ideas,
+        deck_style=req.deck_style,
+        surface=req.surface,
+    )
+    headers = {
+        "Content-Disposition": f'attachment; filename="{export.filename}"',
+        "X-Word-Export-Engine": export.engine,
+    }
+    return Response(content=export.body, media_type=DOCX_MIME, headers=headers)
 
 
 @router.get("/export/word/skill-excerpt")

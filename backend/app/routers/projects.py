@@ -23,6 +23,12 @@ class ProjectDto(BaseModel):
     id: str
     name: str
     created_at_ms: int
+    archived: bool = False
+    last_active_ms: int = 0
+
+
+class ProjectArchiveBody(BaseModel):
+    archived: bool
 
 
 class StoredFileDto(BaseModel):
@@ -62,13 +68,43 @@ class IngestWebBody(BaseModel):
 
 @router.get("", response_model=list[ProjectDto])
 def list_projects():
-    return [ProjectDto(id=p.id, name=p.name, created_at_ms=p.created_at_ms) for p in project_storage.list_projects()]
+    return [
+        ProjectDto(
+            id=p.id,
+            name=p.name,
+            created_at_ms=p.created_at_ms,
+            archived=p.archived,
+            last_active_ms=p.last_active_ms,
+        )
+        for p in project_storage.list_projects()
+    ]
 
 
 @router.post("", response_model=ProjectDto)
 def create_project(body: CreateProjectBody):
     p = project_storage.ensure_project(name=body.name, project_id=body.project_id)
-    return ProjectDto(id=p.id, name=p.name, created_at_ms=p.created_at_ms)
+    return ProjectDto(
+        id=p.id,
+        name=p.name,
+        created_at_ms=p.created_at_ms,
+        archived=p.archived,
+        last_active_ms=p.last_active_ms,
+    )
+
+
+@router.patch("/{project_id}", response_model=ProjectDto)
+def update_project(project_id: str, body: ProjectArchiveBody):
+    try:
+        p = project_storage.set_project_archived(project_id=project_id, archived=body.archived)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return ProjectDto(
+        id=p.id,
+        name=p.name,
+        created_at_ms=p.created_at_ms,
+        archived=p.archived,
+        last_active_ms=p.last_active_ms,
+    )
 
 
 @router.delete("/{project_id}")
@@ -313,4 +349,3 @@ def build_mindmap_from_project(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate mindmap JSON: {e}")
     return {"project_id": project_id, "mindmap": mindmap}
-

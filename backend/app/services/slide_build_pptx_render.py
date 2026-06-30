@@ -15,8 +15,8 @@ from typing import Any
 from app.services.slide_build_artifacts import extract_slide_inner_from_document, read_slide_document, read_slide_manifest
 from app.services.slide_build_scene import has_scene, render_scene_to_pptx_slide, temp_media_dir
 from app.services.slide_build_session_prefs import load_build_preferences
+from app.services.document_style import get_document_style, normalize_deck_style
 
-DECK_STYLES = frozenset({"consulting_mbb", "government", "academic", "creative"})
 LAYOUTS = frozenset(
     {
         "title_body",
@@ -59,8 +59,7 @@ class PreviewComparisonPanel:
 
 
 def _normalize_deck_style(value: str | None) -> str:
-    v = (value or "consulting_mbb").strip().lower()
-    return v if v in DECK_STYLES else "consulting_mbb"
+    return normalize_deck_style(value)
 
 
 def _slides_list(framework: dict[str, Any]) -> list[dict[str, Any]]:
@@ -289,118 +288,21 @@ def _surface_variant(session_id: str | None) -> str:
 
 
 def _palette_for(style: str, surface: str = "light") -> PptxSlidePalette:
-    key = _normalize_deck_style(style)
-    dark_surface = surface in {"dark", "glass"}
-    if dark_surface:
-        if key == "government":
-            return PptxSlidePalette(
-                slide_bg=(11, 18, 32),
-                title_rgb=(241, 245, 249),
-                subtitle_rgb=(165, 180, 252),
-                body_rgb=(226, 232, 240),
-                accent_rgb=(59, 130, 246),
-                muted_rgb=(148, 163, 184),
-                card_bg=(20, 29, 48),
-                card_border_rgb=(51, 65, 85),
-                success_rgb=(74, 222, 128),
-                danger_rgb=(248, 113, 113),
-                title_pt=28,
-                subtitle_pt=15,
-                body_pt=13,
-            )
-        if key == "academic":
-            return PptxSlidePalette(
-                slide_bg=(15, 23, 42),
-                title_rgb=(248, 250, 252),
-                subtitle_rgb=(196, 181, 253),
-                body_rgb=(226, 232, 240),
-                accent_rgb=(167, 139, 250),
-                muted_rgb=(148, 163, 184),
-                card_bg=(30, 41, 59),
-                card_border_rgb=(71, 85, 105),
-                success_rgb=(74, 222, 128),
-                danger_rgb=(248, 113, 113),
-                title_pt=28,
-                subtitle_pt=15,
-                body_pt=13,
-            )
-        return PptxSlidePalette(
-            slide_bg=(15, 23, 42),
-            title_rgb=(248, 250, 252),
-            subtitle_rgb=(148, 163, 184),
-            body_rgb=(226, 232, 240),
-            accent_rgb=(167, 139, 250),
-            muted_rgb=(100, 116, 139),
-            card_bg=(30, 41, 59),
-            card_border_rgb=(71, 85, 105),
-            success_rgb=(74, 222, 128),
-            danger_rgb=(248, 113, 113),
-            title_pt=30,
-            subtitle_pt=15,
-            body_pt=14,
-        )
-    if key == "government":
-        return PptxSlidePalette(
-            slide_bg=(255, 255, 255),
-            title_rgb=(23, 43, 77),
-            subtitle_rgb=(66, 82, 105),
-            body_rgb=(52, 61, 71),
-            accent_rgb=(14, 71, 143),
-            muted_rgb=(120, 130, 142),
-            card_bg=(247, 249, 252),
-            card_border_rgb=(203, 213, 225),
-            success_rgb=(22, 163, 74),
-            danger_rgb=(220, 38, 38),
-            title_pt=28,
-            subtitle_pt=15,
-            body_pt=13,
-        )
-    if key == "academic":
-        return PptxSlidePalette(
-            slide_bg=(252, 252, 250),
-            title_rgb=(34, 38, 43),
-            subtitle_rgb=(70, 74, 82),
-            body_rgb=(54, 54, 54),
-            accent_rgb=(118, 54, 148),
-            muted_rgb=(112, 118, 126),
-            card_bg=(247, 247, 245),
-            card_border_rgb=(212, 212, 216),
-            success_rgb=(22, 163, 74),
-            danger_rgb=(220, 38, 38),
-            title_pt=26,
-            subtitle_pt=14,
-            body_pt=13,
-        )
-    if key == "creative":
-        return PptxSlidePalette(
-            slide_bg=(15, 23, 42),
-            title_rgb=(248, 250, 252),
-            subtitle_rgb=(203, 213, 225),
-            body_rgb=(226, 232, 240),
-            accent_rgb=(167, 139, 250),
-            muted_rgb=(148, 163, 184),
-            card_bg=(30, 41, 59),
-            card_border_rgb=(71, 85, 105),
-            success_rgb=(74, 222, 128),
-            danger_rgb=(248, 113, 113),
-            title_pt=32,
-            subtitle_pt=16,
-            body_pt=14,
-        )
+    shared = get_document_style(style, surface)
     return PptxSlidePalette(
-        slide_bg=(255, 255, 255),
-        title_rgb=(31, 41, 55),
-        subtitle_rgb=(71, 85, 105),
-        body_rgb=(51, 65, 85),
-        accent_rgb=(124, 58, 237),
-        muted_rgb=(148, 163, 184),
-        card_bg=(248, 250, 252),
-        card_border_rgb=(226, 232, 240),
-        success_rgb=(22, 163, 74),
-        danger_rgb=(220, 38, 38),
-        title_pt=30,
-        subtitle_pt=15,
-        body_pt=14,
+        slide_bg=shared.slide_bg,
+        title_rgb=shared.title_rgb,
+        subtitle_rgb=shared.subtitle_rgb,
+        body_rgb=shared.body_rgb,
+        accent_rgb=shared.accent_rgb,
+        muted_rgb=shared.muted_rgb,
+        card_bg=shared.card_bg,
+        card_border_rgb=shared.card_border_rgb,
+        success_rgb=shared.success_rgb,
+        danger_rgb=shared.danger_rgb,
+        title_pt=shared.title_pt,
+        subtitle_pt=shared.subtitle_pt,
+        body_pt=shared.body_pt,
     )
 
 

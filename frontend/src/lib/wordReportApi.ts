@@ -1,4 +1,4 @@
-import { postJson } from "./postJson";
+import { HttpError, postJson } from "./postJson";
 import type { MindmapJson, MindmapNode } from "../types/mindmap";
 
 function joinUrl(base: string, path: string) {
@@ -123,6 +123,57 @@ export function postWordFinalMarkdown(
     body,
     init
   );
+}
+
+function filenameFromDisposition(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  const utf = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf?.[1]) {
+    try {
+      return decodeURIComponent(utf[1]);
+    } catch {
+      return utf[1];
+    }
+  }
+  const plain = value.match(/filename="?([^";]+)"?/i);
+  return plain?.[1] || fallback;
+}
+
+export async function postWordFinalDocx(
+  backendBase: string,
+  body: {
+    intent: string;
+    target_audience: string;
+    source_corpus: string;
+    nodes: WordReportNodePayload[];
+    edges: MindmapJson["edges"];
+    framework_selection: string;
+    chapters: WordChapter[];
+    include_chapter_writing_prompts: boolean;
+    include_visual_ideas: boolean;
+    deck_style?: string;
+    surface?: string;
+  },
+  init?: RequestInit
+): Promise<{ blob: Blob; filename: string; engine: string }> {
+  const res = await fetch(joinUrl(backendBase, "/export/word/final-docx"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(init?.headers as HeadersInit | undefined) },
+    body: JSON.stringify(body),
+    signal: init?.signal
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const d = (data as { detail?: unknown }).detail;
+    const msg = typeof d === "string" ? d : `Request failed (${res.status})`;
+    throw new HttpError(msg, res.status, data);
+  }
+  const blob = await res.blob();
+  return {
+    blob,
+    filename: filenameFromDisposition(res.headers.get("Content-Disposition"), "word-export-report.docx"),
+    engine: res.headers.get("X-Word-Export-Engine") || ""
+  };
 }
 
 export function mapNodesForWord(n: MindmapNode) {

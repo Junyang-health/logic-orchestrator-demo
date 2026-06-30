@@ -29,7 +29,7 @@ export default function CanvasWorkspaceToggle() {
 
   return (
     <div
-      className="pointer-events-auto absolute left-3 top-3 z-[50] flex items-center gap-0.5 rounded-xl border border-slate-200/90 bg-white/95 p-0.5 shadow-lg backdrop-blur-sm dark:border-slate-600 dark:bg-slate-900/95"
+      className="pointer-events-auto absolute left-4 top-4 z-[50] flex items-center gap-1 rounded-full border border-[var(--mm-border-subtle)] bg-white/78 p-1 shadow-[0_14px_32px_rgba(45,82,140,0.12)] backdrop-blur-xl dark:bg-slate-950/62 dark:shadow-[0_18px_42px_rgba(0,0,0,0.28)]"
       role="tablist"
       aria-label={t("workspace_toggle_aria")}
     >
@@ -38,10 +38,10 @@ export default function CanvasWorkspaceToggle() {
         role="tab"
         aria-selected={centerWorkspace === "canvas"}
         className={[
-          "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition",
+          "rounded-full px-5 py-2 text-[12px] font-semibold transition",
           centerWorkspace === "canvas"
-            ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-            : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-[0_10px_20px_rgba(47,109,246,0.22)]"
+            : "text-slate-600 hover:bg-blue-50 dark:text-slate-300 dark:hover:bg-blue-500/10"
         ].join(" ")}
         onClick={goCanvas}
       >
@@ -52,10 +52,10 @@ export default function CanvasWorkspaceToggle() {
         role="tab"
         aria-selected={centerWorkspace === "slide_deck"}
         className={[
-          "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition",
+          "rounded-full px-5 py-2 text-[12px] font-semibold transition",
           centerWorkspace === "slide_deck"
-            ? "bg-violet-600 text-white dark:bg-violet-500"
-            : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-[0_10px_20px_rgba(47,109,246,0.22)]"
+            : "text-slate-600 hover:bg-blue-50 dark:text-slate-300 dark:hover:bg-blue-500/10"
         ].join(" ")}
         onClick={goDeck}
       >

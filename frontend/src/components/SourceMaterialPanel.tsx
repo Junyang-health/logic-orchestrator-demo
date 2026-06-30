@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Image as ImageIcon, Info, Settings, Trash2, Upload } from "lucide-react";
+import { FileText, Image as ImageIcon, Info, Trash2, Upload } from "lucide-react";
 import { useI18n } from "../i18n/useI18n";
 import { MIN_INTENT_BOOTSTRAP, runMindmapBuild } from "../lib/mindmapBuild";
 import useUiStore from "../store/useUiStore";
@@ -9,10 +9,8 @@ import type { MindmapJson } from "../types/mindmap";
 import { formatBytes } from "../lib/formatBytes";
 import {
   markCanvasAutoFetched,
-  shouldSkipCanvasAutoFetch,
-  clearCanvasAutoFetchForProject
+  shouldSkipCanvasAutoFetch
 } from "./sourceMaterial/canvasAutoFetch";
-import { PREV_PROJECT_SESSION_KEY } from "./sourceMaterial/projectSessionKeys";
 import type { SourceSortKey, StoredProjectFile } from "./sourceMaterial/sourceFileSort";
 import { sortStoredProjectFiles } from "./sourceMaterial/sourceFileSort";
 import { SOURCE_FILE_INPUT_ACCEPT } from "./sourceMaterial/sourceFileAccept";
@@ -20,17 +18,11 @@ import { SourceMaterialStoredFilesBlock } from "./sourceMaterial/SourceMaterialS
 
 /** Canvas auto-fetch guard: see `sourceMaterial/canvasAutoFetch.ts` (avoids duplicate nodes on dock remount). */
 
-type Project = { id: string; name: string };
-
 export default function SourceMaterialPanel(props: { backendBase: string }) {
   const { t, locale } = useI18n();
   const projectId = useUiStore((s) => s.projectId);
-  const setProjectId = useUiStore((s) => s.setProjectId);
-  const projects = useUiStore((s) => s.projects);
-  const setProjects = useUiStore((s) => s.setProjects);
   const intent = useUiStore((s) => s.intent);
   const setIntent = useUiStore((s) => s.setIntent);
-  const openProjectLanding = useUiStore((s) => s.openProjectLanding);
 
   const sourceFiles = useUiStore((s) => s.sourceFiles);
   const addSourceFiles = useUiStore((s) => s.addSourceFiles);
@@ -47,7 +39,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [newProjectName, setNewProjectName] = useState("");
   const [storedFiles, setStoredFiles] = useState<StoredProjectFile[]>([]);
   /** Stored file ids to include when generating from the project (not the upload queue). */
   const [selectedStoredIds, setSelectedStoredIds] = useState<string[]>([]);
@@ -56,7 +47,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [savedCanvasUpdatedMs, setSavedCanvasUpdatedMs] = useState<number | null>(null);
-  const [projectDeleteBusy, setProjectDeleteBusy] = useState(false);
 
   const sortedStoredFiles = useMemo(() => sortStoredProjectFiles(storedFiles, sourceSort), [storedFiles, sourceSort]);
 
@@ -89,14 +79,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     },
     [addSourceFiles]
   );
-
-  const refreshProjects = useCallback(async () => {
-    const res = await fetch(`${props.backendBase}/projects`);
-    if (!res.ok) throw new Error(String(res.status));
-    const data = (await res.json()) as Project[];
-    setProjects(data);
-    return data;
-  }, [props.backendBase, setProjects]);
 
   const refreshStoredFiles = useCallback(async () => {
     if (!projectId) {
@@ -183,30 +165,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
   }, [projectId, props.backendBase, mainGraph, sandboxGraph, t]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await refreshProjects();
-        // Auto-create a default project on first run.
-        if ((!projectId || !data.some((p) => p.id === projectId)) && data.length === 0) {
-          const res = await fetch(`${props.backendBase}/projects`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: "Default" })
-          });
-          if (res.ok) {
-            const p = (await res.json()) as Project;
-            setProjectId(p.id);
-            setProjects([p]);
-          }
-        }
-      } catch {
-        // ignore: backend may be down
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.backendBase]);
-
-  useEffect(() => {
     if (!projectId) return;
     refreshStoredFiles().catch(() => {});
     if (shouldSkipCanvasAutoFetch(projectId)) {
@@ -248,54 +206,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
     [t, locale]
   );
 
-  const deleteEntireProject = useCallback(async () => {
-    const pid = projectId.trim();
-    if (!pid) return;
-    const meta = projects.find((p) => p.id === pid);
-    const name = meta?.name ?? pid;
-    if (!window.confirm(t("sm_project_delete_confirm", { name, id: pid }))) return;
-    setProjectDeleteBusy(true);
-    setError("");
-    setSaveMessage("");
-    try {
-      const res = await fetch(`${props.backendBase}/projects/${encodeURIComponent(pid)}`, { method: "DELETE" });
-      const raw = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const d = (raw as { detail?: unknown }).detail;
-        setError(typeof d === "string" ? d : t("sm_project_delete_err"));
-        return;
-      }
-      const cur = useUiStore.getState().projects;
-      setProjects(cur.filter((p) => p.id !== pid));
-      clearCanvasAutoFetchForProject(pid);
-      if (useUiStore.getState().projectId === pid) {
-        setProjectId("");
-        loadMainGraph({ nodes: [], edges: [] });
-        clearSandbox();
-        setSandboxMode(false);
-        useUiStore.getState().setSelectedNode(null);
-        setStoredFiles([]);
-        setSelectedStoredIds([]);
-        setSavedCanvasUpdatedMs(null);
-        setSaveMessage(t("sm_project_deleted_canvas_cleared"));
-      }
-    } catch {
-      setError(t("err_delete_net"));
-    } finally {
-      setProjectDeleteBusy(false);
-    }
-  }, [
-    projectId,
-    projects,
-    props.backendBase,
-    setProjects,
-    setProjectId,
-    loadMainGraph,
-    clearSandbox,
-    setSandboxMode,
-    t
-  ]);
-
   const buildMindmap = useCallback(async () => {
     setBusy(true);
     setError("");
@@ -336,110 +246,6 @@ export default function SourceMaterialPanel(props: { backendBase: string }) {
           <p className="mt-1 text-[11px] font-medium leading-[1.5] text-[var(--mm-text-muted)]">{t("sm_intro")}</p>
         </div>
         <Upload className="mt-0.5 h-4 w-4 shrink-0 text-[var(--mm-cta-blue)] dark:text-slate-400" aria-hidden />
-      </div>
-
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          className="ios-button-primary min-w-0 flex-1 py-2 text-[12px]"
-          onClick={() => {
-            try {
-              const cur = useUiStore.getState().projectId;
-              if (cur) sessionStorage.setItem(PREV_PROJECT_SESSION_KEY, cur);
-            } catch {
-              /* ignore */
-            }
-            openProjectLanding("new_project");
-          }}
-        >
-          {t("sm_new_project_wizard")}
-        </button>
-        <button
-          type="button"
-          className="ios-button-secondary flex h-[2.5rem] w-[2.5rem] shrink-0 items-center justify-center p-0"
-          title={t("sm_open_setup")}
-          aria-label={t("sm_open_setup")}
-          onClick={() => openProjectLanding("first_visit")}
-        >
-          <Settings className="h-4 w-4" strokeWidth={2} aria-hidden />
-        </button>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="text-[11px] font-medium text-[var(--mm-text-title)]">
-          {t("sm_project")}
-          <select
-            className="mt-1 ios-select"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-          >
-            <option value="">{t("sm_no_project")}</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.id})
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="text-[11px] font-medium text-[var(--mm-text-title)]">
-          {t("sm_quick_create")}
-          <div className="mt-1 flex gap-2">
-            <input
-              className="ios-input py-1.5"
-              value={newProjectName}
-              placeholder={t("sm_new_project_ph")}
-              onChange={(e) => setNewProjectName(e.target.value)}
-              onKeyDown={async (e) => {
-                if (e.key !== "Enter") return;
-                const name = newProjectName.trim();
-                if (!name) return;
-                const res = await fetch(`${props.backendBase}/projects`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name })
-                });
-                if (!res.ok) return;
-                const p = (await res.json()) as Project;
-                const cur = useUiStore.getState().projects;
-                setProjects([p, ...cur.filter((x) => x.id !== p.id)]);
-                setProjectId(p.id);
-                setNewProjectName("");
-              }}
-            />
-            <button
-              type="button"
-              className="ios-button-secondary shrink-0"
-              onClick={async () => {
-                const name = newProjectName.trim();
-                if (!name) return;
-                const res = await fetch(`${props.backendBase}/projects`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name })
-                });
-                if (!res.ok) return;
-                const p = (await res.json()) as Project;
-                const cur = useUiStore.getState().projects;
-                setProjects([p, ...cur.filter((x) => x.id !== p.id)]);
-                setProjectId(p.id);
-                setNewProjectName("");
-              }}
-            >
-              {t("sm_create")}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 border-t border-[var(--mm-border-subtle)] pt-2">
-        <button
-          type="button"
-          className="ios-button-ghost px-0 py-0 text-[10px] font-medium underline decoration-[var(--mm-text-placeholder)] underline-offset-4 disabled:opacity-40"
-          disabled={!projectId || projectDeleteBusy}
-          onClick={() => void deleteEntireProject()}
-        >
-          {t("sm_project_delete_btn")}
-        </button>
       </div>
 
       {projectId ? (
