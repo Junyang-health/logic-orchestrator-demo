@@ -24,7 +24,9 @@ from app.services.slide_build_artifacts import (
     slide_html_path,
 )
 from app.services.slide_export_review import export_review_path, review_export_consistency
+from app.services.slide_build_dom_pptx import build_pptx_from_preview_html
 from app.services.slide_build_pptx_render import build_pptx_with_specs, merged_slide_views
+from app.services.document_style import get_document_style, rgb_float
 
 SLIDE_W_IN = 13.333
 SLIDE_H_IN = 7.5
@@ -34,37 +36,13 @@ CHROME_RENDER_TIMEOUT_SEC = 12
 
 
 def _pdf_palette(deck_style: str) -> dict[str, tuple[float, float, float]]:
-    s = (deck_style or "consulting_mbb").strip().lower()
-    if s == "creative":
-        return {
-            "bg": (0.06, 0.09, 0.16),
-            "title": (0.97, 0.98, 1.0),
-            "sub": (0.8, 0.84, 0.92),
-            "body": (0.88, 0.91, 0.96),
-            "muted": (0.58, 0.64, 0.72),
-        }
-    if s == "academic":
-        return {
-            "bg": (0.99, 0.99, 0.98),
-            "title": (0.13, 0.15, 0.17),
-            "sub": (0.28, 0.29, 0.32),
-            "body": (0.21, 0.21, 0.21),
-            "muted": (0.44, 0.46, 0.5),
-        }
-    if s == "government":
-        return {
-            "bg": (1.0, 1.0, 1.0),
-            "title": (0.09, 0.17, 0.3),
-            "sub": (0.26, 0.32, 0.41),
-            "body": (0.2, 0.24, 0.28),
-            "muted": (0.47, 0.51, 0.56),
-        }
+    s = get_document_style(deck_style)
     return {
-        "bg": (1.0, 1.0, 1.0),
-        "title": (0.12, 0.16, 0.22),
-        "sub": (0.28, 0.33, 0.41),
-        "body": (0.2, 0.25, 0.33),
-        "muted": (0.5, 0.55, 0.62),
+        "bg": rgb_float(s.slide_bg),
+        "title": rgb_float(s.title_rgb),
+        "sub": rgb_float(s.subtitle_rgb),
+        "body": rgb_float(s.body_rgb),
+        "muted": rgb_float(s.muted_rgb),
     }
 
 
@@ -74,7 +52,7 @@ def build_pptx_file(
     dest: Path,
     rendered_previews: list[Path] | None = None,
 ) -> None:
-    mode = (os.getenv("UNBOX_PPTX_EXPORT_MODE") or "editable").strip().lower()
+    mode = (os.getenv("UNBOX_PPTX_EXPORT_MODE") or "preview_editable").strip().lower()
     if mode in {"image", "preview", "raster"}:
         rendered = (
             _render_preview_pngs(session_id, framework)
@@ -83,6 +61,9 @@ def build_pptx_file(
         )
         if rendered:
             build_pptx_from_png_paths(rendered, dest)
+            return
+    if mode in {"preview_editable", "html", "dom", "html2pptx"}:
+        if build_pptx_from_preview_html(session_id, framework, dest):
             return
     build_pptx_with_specs(session_id, framework, dest)
 

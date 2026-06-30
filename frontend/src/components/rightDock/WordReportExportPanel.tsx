@@ -3,10 +3,11 @@ import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../../i18n/useI18n";
 import useUiStore from "../../store/useUiStore";
 import { mergeBranchSubgraphs } from "../../lib/graphBranch";
-import { downloadTextFile } from "../../lib/fileDownload";
+import { downloadBlobFile, downloadTextFile } from "../../lib/fileDownload";
 import {
   mapNodesForWord,
   postWordChatFramework,
+  postWordFinalDocx,
   postWordFinalMarkdown,
   postWordGapReview,
   postWordGenerateFramework,
@@ -183,7 +184,7 @@ export default function WordReportExportPanel(props: Props) {
     }
     setBusy(true);
     try {
-      const res = await postWordFinalMarkdown(backendBase, {
+      const docx = await postWordFinalDocx(backendBase, {
         intent: intent.trim(),
         target_audience: audience.trim(),
         source_corpus: sourceNotes.trim(),
@@ -192,15 +193,32 @@ export default function WordReportExportPanel(props: Props) {
         framework_selection: frameworkSelection,
         chapters,
         include_chapter_writing_prompts: true,
-        include_visual_ideas: true
+        include_visual_ideas: true,
+        deck_style: "consulting_mbb",
+        surface: "light"
       });
-      downloadTextFile(
-        res.filename || "word-export.md",
-        res.markdown,
-        "text/markdown;charset=utf-8"
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      downloadBlobFile(docx.filename || "word-export-report.docx", docx.blob);
+    } catch (docxError) {
+      try {
+        const res = await postWordFinalMarkdown(backendBase, {
+          intent: intent.trim(),
+          target_audience: audience.trim(),
+          source_corpus: sourceNotes.trim(),
+          nodes: nodePayload,
+          edges: subgraph.edges,
+          framework_selection: frameworkSelection,
+          chapters,
+          include_chapter_writing_prompts: true,
+          include_visual_ideas: true
+        });
+        downloadTextFile(
+          res.filename || "word-export.md",
+          res.markdown,
+          "text/markdown;charset=utf-8"
+        );
+      } catch {
+        setError(docxError instanceof Error ? docxError.message : String(docxError));
+      }
     } finally {
       setBusy(false);
     }
@@ -525,7 +543,7 @@ export default function WordReportExportPanel(props: Props) {
           disabled={busy}
           onClick={runDownload}
         >
-          {busy ? t("export_word_preparing") : t("export_word_download_md")}
+          {busy ? t("export_word_preparing") : t("export_word_download_docx")}
         </button>
       )}
 

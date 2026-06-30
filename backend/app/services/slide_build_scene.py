@@ -19,6 +19,7 @@ CANVAS_W = 1600.0
 CANVAS_H = 900.0
 SLIDE_W_IN = 13.333
 SLIDE_H_IN = 7.5
+DEFAULT_PPT_FONT = "Aptos"
 
 
 def has_scene(scene: Any) -> bool:
@@ -33,6 +34,7 @@ def render_scene_to_pptx_slide(slide: Any, scene: dict[str, Any], tmp_dir: Path)
     fill = slide.background.fill
     fill.solid()
     fill.fore_color.rgb = RGBColor(*bg)
+    _add_slide_background_shape(slide, bg)
 
     elements = scene.get("elements")
     if not isinstance(elements, list):
@@ -60,6 +62,23 @@ def render_scene_to_pptx_slide(slide: Any, scene: dict[str, Any], tmp_dir: Path)
             # Keep export resilient: one unsupported scene object should not
             # prevent the rest of the slide from staying editable.
             continue
+
+
+def _add_slide_background_shape(slide: Any, bg: tuple[int, int, int]) -> None:
+    from pptx.dml.color import RGBColor  # type: ignore[import-untyped]
+    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE  # type: ignore[import-untyped]
+    from pptx.util import Inches  # type: ignore[import-untyped]
+
+    shape = slide.shapes.add_shape(
+        MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+        Inches(0),
+        Inches(0),
+        Inches(SLIDE_W_IN),
+        Inches(SLIDE_H_IN),
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor(*bg)
+    shape.line.fill.background()
 
 
 def _in(value: Any, axis: str = "x") -> Any:
@@ -100,6 +119,16 @@ def _rgb(value: Any, fallback: tuple[int, int, int] = (255, 255, 255)) -> tuple[
             except ValueError:
                 return fallback
     return fallback
+
+
+def _font_face(value: Any) -> str:
+    raw = str(value or "").strip().strip("\"'")
+    first = raw.split(",", 1)[0].strip().strip("\"'") if raw else ""
+    if not first or first.lower() in {"system-ui", "-apple-system", "sans-serif"}:
+        return DEFAULT_PPT_FONT
+    if "segoe ui" in first.lower():
+        return DEFAULT_PPT_FONT
+    return first
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -184,6 +213,11 @@ def _add_text(slide: Any, el: dict[str, Any]) -> None:
     tf = box.text_frame
     tf.clear()
     tf.word_wrap = bool(el.get("wrap", True))
+    for attr in ("margin_left", "margin_right", "margin_top", "margin_bottom"):
+        try:
+            setattr(tf, attr, 0)
+        except Exception:
+            pass
     valign = str(el.get("valign") or el.get("verticalAlign") or "top").lower()
     if valign == "middle":
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -193,15 +227,23 @@ def _add_text(slide: Any, el: dict[str, Any]) -> None:
     lines = text.splitlines() or [""]
     color = RGBColor(*_rgb(el.get("color") or "#111827", (17, 24, 39)))
     size = Pt(max(1, _num(el.get("fontSize", el.get("size", 18)), 18)))
+    line_height = _num(el.get("lineHeight"), 0)
+    font_face = _font_face(el.get("fontFace") or el.get("fontFamily"))
     align = str(el.get("align") or "left").lower()
     align_map = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT, "justify": PP_ALIGN.JUSTIFY}
     for idx, line in enumerate(lines):
         p = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
         p.text = line
         p.font.size = size
+        p.font.name = font_face
         p.font.bold = bool(el.get("bold"))
         p.font.italic = bool(el.get("italic"))
         p.font.color.rgb = color
+        if line_height > 0:
+            try:
+                p.line_spacing = Pt(line_height)
+            except Exception:
+                pass
         if align in align_map:
             p.alignment = align_map[align]
 
@@ -232,6 +274,7 @@ def _add_table(slide: Any, el: dict[str, Any]) -> None:
             p = cell.text_frame.paragraphs[0]
             p.font.bold = True
             p.font.size = font_size
+            p.font.name = _font_face(el.get("fontFace") or el.get("fontFamily"))
             p.font.color.rgb = header_rgb
     for ridx, row in enumerate(body[: nrows - start], start=start):
         for c in range(cols):
@@ -239,6 +282,7 @@ def _add_table(slide: Any, el: dict[str, Any]) -> None:
             cell.text = str(row[c] if c < len(row) else "")[:1000]
             p = cell.text_frame.paragraphs[0]
             p.font.size = font_size
+            p.font.name = _font_face(el.get("fontFace") or el.get("fontFamily"))
             p.font.color.rgb = body_rgb
 
 

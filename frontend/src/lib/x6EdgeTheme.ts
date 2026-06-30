@@ -10,14 +10,13 @@ export function edgeLineAttrs(isDraft: boolean) {
   };
 }
 
-/** Default routing: light = smooth organic curves; dark = manhattan / circuit-style. */
+/** Default routing: smooth workflow curves in both day and night modes. */
 export function applyGraphEdgeTheme(graph: Graph, theme: X6ChromeTheme) {
-  const isDark = theme === "dark";
-  const router = isDark ? "manhattan" : "normal";
-  const connector = isDark ? { name: "rounded" as const, args: { radius: 6 } } : { name: "smooth" as const };
+  const router = "normal";
+  const connector = { name: "smooth" as const };
 
   try {
-    graph.setConnecting({
+    (graph as any).setConnecting({
       router,
       connector,
       createEdge() {
@@ -29,7 +28,7 @@ export function applyGraphEdgeTheme(graph: Graph, theme: X6ChromeTheme) {
           data: { status: isSandbox ? "draft" : "firm" }
         });
       }
-    } as Parameters<Graph["setConnecting"]>[0]);
+    });
   } catch {
     /* ignore */
   }
@@ -51,21 +50,18 @@ export function applyGraphGridTheme(graph: Graph, theme: X6ChromeTheme) {
   try {
     if (isDark) {
       graph.drawGrid({
-        type: "doubleMesh",
-        size: 20,
+        type: "dot",
+        size: 18,
         visible: true,
-        args: [
-          { color: "rgba(148, 163, 184, 0.07)", thickness: 1, factor: 5 },
-          { color: "rgba(2, 6, 23, 0.35)", thickness: 1, factor: 5 }
-        ]
+        args: { color: "rgba(96, 165, 250, 0.16)", thickness: 1.05 }
       } as Parameters<Graph["drawGrid"]>[0]);
     } else {
       graph.drawGrid({
         type: "dot",
-        size: 20,
+        size: 18,
         visible: true,
-        args: { color: "rgba(229, 231, 235, 0.65)", thickness: 1.1 }
-      });
+        args: { color: "rgba(143, 170, 214, 0.52)", thickness: 1.05 }
+      } as Parameters<Graph["drawGrid"]>[0]);
     }
   } catch {
     /* ignore */

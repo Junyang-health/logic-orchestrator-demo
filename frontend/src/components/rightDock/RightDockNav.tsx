@@ -1,4 +1,4 @@
-import { ChevronRight, Moon, SunMedium } from "lucide-react";
+import { ChevronRight, Moon, Sparkles, SunMedium } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../../i18n/useI18n";
 import useUiStore from "../../store/useUiStore";
@@ -16,13 +16,16 @@ export default function RightDockNav() {
   );
 
   return (
-      <nav className="border-b border-[var(--mm-border-subtle)] px-4 pb-3 pt-3">
+      <nav className="border-b border-[var(--mm-border-subtle)] px-4 pb-3 pt-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-            Workspace panels
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-white shadow-[0_12px_22px_rgba(47,109,246,0.28)]">
+            <Sparkles className="h-[18px] w-[18px]" aria-hidden />
           </div>
-          <div className="mt-0.5 text-xs font-medium text-[var(--mm-text-title)]">{t("nav_appearance")}</div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-[var(--mm-text-title)]">Workspace panels</div>
+            <div className="mt-0.5 text-[11px] font-medium text-[var(--mm-text-muted)]">{t("nav_appearance")}</div>
+          </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div

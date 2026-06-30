@@ -21,12 +21,12 @@ export default function AppRightDock(props: { graph: Graph | null; backendBase: 
 
   return (
     <aside
-      className="min-h-0 min-w-0 shrink-0 overflow-hidden border-l border-[var(--mm-border-subtle)] bg-[var(--mm-sidebar-bg)] shadow-[-12px_0_32px_-24px_rgba(15,23,42,0.45)]"
-      style={{ flex: "0 0 clamp(300px, 31vw, 430px)" }}
+      className="min-h-0 min-w-0 shrink-0 overflow-hidden border-l border-[var(--mm-border-subtle)] bg-transparent p-3 pl-2"
+      style={{ flex: "0 0 clamp(320px, 31vw, 450px)" }}
     >
-      <div className="flex h-full min-w-0 flex-col">
+      <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--mm-section-border)] bg-[var(--mm-card-bg)] shadow-[var(--mm-section-shadow)] backdrop-blur-xl">
         <RightDockNav />
-        <div className="flex-1 overflow-auto px-4 py-4 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_18%)]">
+        <div className="flex-1 overflow-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.18),transparent_18%)] px-4 py-4 dark:bg-[linear-gradient(180deg,rgba(96,165,250,0.05),transparent_22%)]">
           {activePanel === "source" ? (
             <SourceSidebarPanel graph={props.graph} backendBase={props.backendBase} />
           ) : activePanel === "review" ? (

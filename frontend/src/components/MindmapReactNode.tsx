@@ -286,6 +286,7 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
         className={[
           `mm-node-surface relative flex w-full min-w-0 flex-col self-start overflow-hidden px-4 pb-6 pt-5`,
           isEvidenceType(type) ? "mm-node-kind-evidence" : "",
+          rootHub ? "mm-node-root-hub" : "",
           isCanvasSelected ? "ring-2 ring-[color-mix(in_srgb,var(--mm-accent)_58%,transparent)]" : "",
           nodeStatusRing(status, { hasFactsCollision }),
           reparentingNodeId === id ? "ring-2 ring-amber-200/90 dark:ring-amber-300/70" : ""
@@ -308,7 +309,7 @@ export default function MindmapReactNode(props: { node?: Node; graph?: Graph | n
         <button
           type="button"
           className={[
-            "absolute left-1 top-3 z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent p-0 opacity-55 transition-[opacity,background-color] hover:bg-black/[0.06] hover:opacity-100 dark:hover:bg-white/[0.08] group-hover/mmnode:opacity-90",
+            "absolute left-1 top-3 z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent p-0 opacity-65 transition-[opacity,background-color] hover:bg-black/[0.06] hover:opacity-100 dark:hover:bg-white/[0.08] group-hover/mmnode:opacity-95",
             isEvidenceType(type)
               ? "text-[var(--mm-node-rail-evidence)]"
               : "text-[var(--mm-node-rail-inferred)]"

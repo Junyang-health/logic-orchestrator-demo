@@ -27,15 +27,15 @@ export default function X6CanvasToolbar({
   return (
     <>
       <div
-        className="pointer-events-auto absolute right-2 top-2 z-[45] flex max-w-[min(100%,20rem)] flex-col items-stretch gap-1.5 sm:right-3 sm:top-3"
+        className="pointer-events-auto absolute right-4 top-4 z-[45] flex max-w-[min(100%,22rem)] flex-col items-stretch gap-2"
         role="toolbar"
         aria-label={t("canvas_subtree_bar_aria")}
       >
-        <div className="flex flex-wrap items-stretch justify-end gap-1 rounded-2xl border border-slate-200/90 bg-white/95 p-1 shadow-md backdrop-blur-sm dark:border-slate-600/90 dark:bg-slate-900/95">
+        <div className="flex flex-wrap items-stretch justify-end gap-1 rounded-xl border border-[var(--mm-border-subtle)] bg-white/78 p-1 shadow-[0_14px_30px_rgba(45,82,140,0.1)] backdrop-blur-xl dark:bg-slate-950/66 dark:shadow-[0_18px_38px_rgba(0,0,0,0.26)]">
           <button
             type="button"
             disabled={!hasCollapsedSubtrees}
-            className="inline-flex min-h-[1.75rem] shrink-0 items-center gap-1 rounded-xl border border-transparent bg-transparent px-2 py-1 text-[10px] font-semibold text-sky-800 hover:bg-sky-100/90 disabled:cursor-not-allowed disabled:opacity-40 dark:text-sky-200 dark:hover:bg-sky-900/50"
+            className="inline-flex min-h-[2rem] shrink-0 items-center gap-1.5 rounded-lg border border-transparent bg-transparent px-2.5 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-blue-200 dark:hover:bg-blue-500/12"
             onClick={onExpandAllSubtrees}
             title={hasCollapsedSubtrees ? t("canvas_expand_all_subtrees_title") : t("canvas_expand_all_subtrees_disabled")}
             aria-label={
@@ -48,7 +48,7 @@ export default function X6CanvasToolbar({
           <button
             type="button"
             disabled={!canCollapseToTop}
-            className="inline-flex min-h-[1.75rem] shrink-0 items-center gap-1 rounded-xl border border-transparent bg-transparent px-2 py-1 text-[10px] font-semibold text-violet-900 hover:bg-violet-100/80 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-200 dark:hover:bg-violet-950/50"
+            className="inline-flex min-h-[2rem] shrink-0 items-center gap-1.5 rounded-lg border border-transparent bg-transparent px-2.5 py-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-200 dark:hover:bg-violet-500/12"
             onClick={onCollapseAllToTop}
             title={canCollapseToTop ? t("canvas_collapse_to_top_title") : t("canvas_collapse_to_top_disabled")}
             aria-label={canCollapseToTop ? t("canvas_collapse_to_top_title") : t("canvas_collapse_to_top_disabled")}
@@ -60,7 +60,7 @@ export default function X6CanvasToolbar({
         <div className="flex justify-end">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border border-rose-100/50 bg-stone-50/90 px-2.5 py-1.5 text-[10px] font-medium text-stone-600 shadow-pastel backdrop-blur-sm hover:bg-rose-50/80 dark:border-violet-800/50 dark:bg-[#2a2633]/90 dark:text-stone-200 dark:hover:bg-[#34303c]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--mm-border-subtle)] bg-white/78 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 shadow-[0_10px_24px_rgba(45,82,140,0.08)] backdrop-blur-xl hover:bg-white dark:bg-slate-950/66 dark:text-slate-200 dark:shadow-none dark:hover:bg-blue-500/12"
             onClick={onToggleGrid}
             title={canvasGridVisible ? t("canvas_grid_hide") : t("canvas_grid_show")}
             aria-pressed={canvasGridVisible}
@@ -72,7 +72,7 @@ export default function X6CanvasToolbar({
       </div>
       {selectedEdgeId ? (
         <div className="pointer-events-auto absolute bottom-3 left-1/2 z-30 max-w-[min(96%,28rem)] -translate-x-1/2">
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-2 text-[10px] text-slate-800 shadow-pastel backdrop-blur-sm dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-100">
+          <div className="flex items-center gap-2 rounded-xl border border-[var(--mm-border-subtle)] bg-white/88 px-3 py-2 text-[10px] text-slate-800 shadow-[0_16px_34px_rgba(45,82,140,0.12)] backdrop-blur-xl dark:bg-slate-950/78 dark:text-slate-100 dark:shadow-[0_18px_42px_rgba(0,0,0,0.28)]">
             <span className="shrink-0 text-slate-500 dark:text-slate-400">{t("edge_selected_hint")}</span>
             <button
               type="button"
